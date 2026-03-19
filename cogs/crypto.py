@@ -97,10 +97,10 @@ class CryptoActionModal(discord.ui.Modal):
         try:
             amount = float(val_str)
         except ValueError:
-            return await interaction.response.send_message("❌ Будь ласка, введіть коректне число!", ephemeral=True)
+            return await interaction.response.send_message("Будь ласка, введіть коректне число!", ephemeral=True)
             
         if amount <= 0:
-            return await interaction.response.send_message("❌ Кількість має бути більшою за 0!", ephemeral=True)
+            return await interaction.response.send_message("Кількість має бути більшою за 0!", ephemeral=True)
 
         market = load_guild_json(guild_id, CRYPTO_MARKET_FILE)
         config = load_guild_json(guild_id, ECONOMY_CONFIG)
@@ -112,7 +112,7 @@ class CryptoActionModal(discord.ui.Modal):
         user = data[uid]
 
         if self.symbol not in market:
-            return await interaction.response.send_message("❌ Валюту не знайдено на біржі.", ephemeral=True)
+            return await interaction.response.send_message("Валюту не знайдено на біржі.", ephemeral=True)
 
         price = market[self.symbol]["price"]
         owner_id = str(market[self.symbol].get("owner"))
@@ -122,7 +122,7 @@ class CryptoActionModal(discord.ui.Modal):
             total_cost = int(price * amount * (1 + buy_commission))
             
             if user.get("balance", 0) < total_cost:
-                return await interaction.response.send_message(f"❌ Недостатньо AC! Треба `{total_cost}`.", ephemeral=True)
+                return await interaction.response.send_message(f"Недостатньо AC! Треба `{total_cost}`.", ephemeral=True)
 
             commission_amount = int(price * amount * buy_commission)
             owner_share = int(price * amount * 0.01) if owner_id != "None" and owner_id != "None" else 0
@@ -137,11 +137,11 @@ class CryptoActionModal(discord.ui.Modal):
             user.setdefault("crypto", {})[self.symbol] = user["crypto"].get(self.symbol, 0) + amount
             user.setdefault("crypto_timestamps", {})[self.symbol] = int(time.time())
 
-            msg = f"✅ Куплено **{amount} {self.symbol}** за `{total_cost} AC`."
+            msg = f"Куплено **{amount} {self.symbol}** за `{total_cost} AC`."
 
         else:
             if self.symbol not in user.get("crypto", {}) or user["crypto"][self.symbol] < amount:
-                return await interaction.response.send_message("❌ Недостатньо криптовалюти для продажу.", ephemeral=True)
+                return await interaction.response.send_message("Недостатньо криптовалюти для продажу.", ephemeral=True)
 
             sell_commission = config.get("sell_commission", 0.05)
             market_spread = config.get("market_spread", 0.10)
@@ -163,7 +163,7 @@ class CryptoActionModal(discord.ui.Modal):
             if owner_id != "None" and owner_id in data:
                 data[owner_id]["balance"] = data[owner_id].get("balance", 0) + owner_share
 
-            msg = f"✅ Продано **{amount} {self.symbol}** за `{base_sell} AC`.{penalty_msg}"
+            msg = f"Продано **{amount} {self.symbol}** за `{base_sell} AC`.{penalty_msg}"
 
         market = self.cog.apply_market_impact(market, self.symbol, amount, is_buy=(self.action == "buy"))
 
@@ -291,7 +291,7 @@ class CryptoCog(commands.Cog):
                     
                 if updated:
                     save_guild_json(guild_id, CRYPTO_MARKET_FILE, market)
-                    logger.info(f"✅ Історія крипти для гільдії {guild_id} успішно збережена за графіком.")
+                    logger.info(f"Історія крипти для гільдії {guild_id} успішно збережена за графіком.")
                     
             except Exception as e:
                 logger.error(f"Помилка запису історії крипти {guild_id_str}: {e}")
@@ -313,7 +313,7 @@ class CryptoCog(commands.Cog):
             market = self.get_default_market()
             save_guild_json(guild_id, CRYPTO_MARKET_FILE, market)
         
-        embed = discord.Embed(title="📊 Крипто-Біржа", color=0xF2A900)
+        embed = discord.Embed(title="Крипто-Біржа", color=0xF2A900)
         embed.set_footer(text="Ціни змінюються кожні 15 хв залежно від попиту")
 
         for symbol, info in market.items():
@@ -323,7 +323,7 @@ class CryptoCog(commands.Cog):
             
             embed.add_field(
                 name=f"{info['name']} ({symbol})",
-                value=f"📈 Курс: `{price} AC`\n📥 Купівля: `{buy_p}`\n📤 Продаж: `{sell_p}`",
+                value=f"Курс: `{price} AC`\n📥 Купівля: `{buy_p}`\n📤 Продаж: `{sell_p}`",
                 inline=True
             )
             
@@ -338,7 +338,7 @@ class CryptoCog(commands.Cog):
     async def create_crypto(self, interaction: discord.Interaction, symbol: str, name: str):
         symbol = symbol.upper()
         if len(symbol) > 4 or not symbol.isalpha():
-            return await interaction.response.send_message("❌ Символ має містити 1-4 літери!", ephemeral=True)
+            return await interaction.response.send_message("Символ має містити 1-4 літери!", ephemeral=True)
             
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -349,10 +349,10 @@ class CryptoCog(commands.Cog):
         user = data.get(uid, {"balance": 0})
 
         if user.get("balance", 0) < 50000:
-            return await interaction.response.send_message("❌ Створення валюти коштує 50,000 AC готівкою.", ephemeral=True)
+            return await interaction.response.send_message("Створення валюти коштує 50,000 AC готівкою.", ephemeral=True)
         
         if symbol in market:
-            return await interaction.response.send_message("❌ Цей символ вже використовується.", ephemeral=True)
+            return await interaction.response.send_message("Цей символ вже використовується.", ephemeral=True)
 
         user["balance"] -= 50000
         config["server_bank"] = config.get("server_bank", 0) + 50000
@@ -381,11 +381,11 @@ class CryptoCog(commands.Cog):
     @app_commands.guild_only()
     async def pay_crypto(self, interaction: discord.Interaction, member: discord.User, symbol: str, amount: float):
         if amount <= 0:
-            return await interaction.response.send_message("❌ Кількість має бути більшою за 0!", ephemeral=True)
+            return await interaction.response.send_message("Кількість має бути більшою за 0!", ephemeral=True)
         if member.id == interaction.user.id:
-            return await interaction.response.send_message("❌ Ви не можете переказати крипту самому собі.", ephemeral=True)
+            return await interaction.response.send_message("Ви не можете переказати крипту самому собі.", ephemeral=True)
         if member.bot:
-            return await interaction.response.send_message("❌ Неможливо переказати крипту боту.", ephemeral=True)
+            return await interaction.response.send_message("Неможливо переказати крипту боту.", ephemeral=True)
 
         symbol = symbol.upper()
         guild_id = interaction.guild.id
@@ -394,7 +394,7 @@ class CryptoCog(commands.Cog):
         market = load_guild_json(guild_id, CRYPTO_MARKET_FILE)
         
         if symbol not in market:
-            return await interaction.response.send_message(f"❌ Валюту **{symbol}** не знайдено на біржі.", ephemeral=True)
+            return await interaction.response.send_message(f"Валюту **{symbol}** не знайдено на біржі.", ephemeral=True)
 
         sender_id = str(interaction.user.id)
         receiver_id = str(member.id)
@@ -410,7 +410,7 @@ class CryptoCog(commands.Cog):
         sender_crypto_balance = sender.get("crypto", {}).get(symbol, 0)
         
         if sender_crypto_balance < amount:
-            return await interaction.response.send_message(f"❌ У вас недостатньо **{symbol}**! Ваш баланс: `{sender_crypto_balance}`.", ephemeral=True)
+            return await interaction.response.send_message(f"У вас недостатньо **{symbol}**! Ваш баланс: `{sender_crypto_balance}`.", ephemeral=True)
 
         sender["crypto"][symbol] -= amount
         
@@ -430,10 +430,10 @@ class CryptoCog(commands.Cog):
         market = load_guild_json(guild_id, CRYPTO_MARKET_FILE)
         
         if symbol not in market:
-            return await interaction.followup.send("❌ Валюту не знайдено.")
+            return await interaction.followup.send("Валюту не знайдено.")
 
         if not (interaction.user.guild_permissions.administrator or interaction.user.id == market[symbol].get("owner")):
-            return await interaction.followup.send("❌ У вас немає прав на видалення цієї валюти.")
+            return await interaction.followup.send("У вас немає прав на видалення цієї валюти.")
 
         data = load_guild_json(guild_id, DATA_FILE)
         price = market[symbol]["price"]
@@ -450,7 +450,7 @@ class CryptoCog(commands.Cog):
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, CRYPTO_MARKET_FILE, market)
         
-        await interaction.followup.send(f"🗑️ Валюту **{symbol}** видалено. Виплачено компенсацію {count} гравцям.")
+        await interaction.followup.send(f"Валюту **{symbol}** видалено. Виплачено компенсацію {count} гравцям.")
 
 async def setup(bot):
     await bot.add_cog(CryptoCog(bot))

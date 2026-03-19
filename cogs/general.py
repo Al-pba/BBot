@@ -21,7 +21,7 @@ class General(commands.Cog):
     async def server(self, interaction: discord.Interaction):
         guild = interaction.guild
         
-        embed = discord.Embed(title=f"🏰 Інформація про {guild.name}", color=0xCFBAF0)
+        embed = discord.Embed(title=f"Інформація про {guild.name}", color=0xCFBAF0)
         embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
         
         created_at = int(guild.created_at.timestamp())
@@ -40,7 +40,7 @@ class General(commands.Cog):
     async def user(self, interaction: discord.Interaction, member: discord.User = None):
         member = member or interaction.user
         
-        embed = discord.Embed(title=f"👤 Профіль: {member.display_name}", color=0xCAF0F8)
+        embed = discord.Embed(title=f"Профіль: {member.display_name}", color=0xCAF0F8)
         embed.set_thumbnail(url=member.display_avatar.url)
         
         roles = [role.mention for role in member.roles[1:]]
@@ -60,7 +60,7 @@ class General(commands.Cog):
 
     @app_commands.command(name="botinfo", description="Технічна інформація про бота")
     async def botinfo(self, interaction: discord.Interaction):
-        embed = discord.Embed(title="🤖 Технічні характеристики бота", color=0xFFCFD2) # Пастельно-рожевий
+        embed = discord.Embed(title="Технічні характеристики бота", color=0xFFCFD2)
         
         embed.add_field(name="Бібліотека", value=f"discord.py v{discord.__version__}", inline=True)
         embed.add_field(name="Python", value=f"v{platform.python_version()}", inline=True)
@@ -76,7 +76,7 @@ class General(commands.Cog):
     async def avatar(self, interaction: discord.Interaction, member: discord.User = None):
         member = member or interaction.user
         
-        embed = discord.Embed(title=f"🖼️ Аватар {member.display_name}", color=0xFDFD96)
+        embed = discord.Embed(title=f"Аватар {member.display_name}", color=0xFDFD96)
         embed.set_image(url=member.display_avatar.url)
         
       

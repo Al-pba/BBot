@@ -62,7 +62,7 @@ class TaxesCog(commands.Cog):
     @app_commands.guild_only()
     async def tax_set(self, interaction: discord.Interaction, tax_type: app_commands.Choice[str], percentage: float):
         if percentage < 0 or percentage > 100:
-            return await interaction.response.send_message("❌ Відсоток має бути в межах від 0 до 100!", ephemeral=True)
+            return await interaction.response.send_message("Відсоток має бути в межах від 0 до 100!", ephemeral=True)
             
         guild_id = interaction.guild.id
         config = self.get_config(guild_id)

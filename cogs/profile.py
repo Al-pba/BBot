@@ -23,7 +23,7 @@ class ProfileBaseView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.author_id:
             return True
-        await interaction.response.send_message("❌ Це не ваше меню!", ephemeral=True)
+        await interaction.response.send_message("Це не ваше меню!", ephemeral=True)
         return False
 
 # ==========================================
@@ -66,12 +66,12 @@ class MainProfileView(discord.ui.View):
     async def check_author(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id == self.author_id:
             return True
-        await interaction.response.send_message("❌ Це не ваше меню!", ephemeral=True)
+        await interaction.response.send_message("Це не ваше меню!", ephemeral=True)
         return False
 
     async def handle_vote(self, interaction: discord.Interaction, vote_type: str):
         if interaction.user.id == self.target_user.id:
-            return await interaction.response.send_message("❌ Ви не можете оцінювати себе.", ephemeral=True)
+            return await interaction.response.send_message("Ви не можете оцінювати себе.", ephemeral=True)
 
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -115,7 +115,7 @@ class MainProfileView(discord.ui.View):
         embed = self.cog.build_stats_embed(self.target_user, user_data)
         await interaction.response.edit_message(embed=embed, view=StatsProfileView(self.target_user, self.cog, self.author_id))
 
-    @discord.ui.button(label="Крипто", style=discord.ButtonStyle.secondary, row=1, emoji="🪙")
+    @discord.ui.button(label="Крипто", style=discord.ButtonStyle.secondary, row=1)
     async def crypto_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.check_author(interaction): return
         
@@ -123,7 +123,7 @@ class MainProfileView(discord.ui.View):
         data = load_guild_json(guild_id, DATA_FILE)
         user_data = self.cog.get_user_data(data, self.target_user.id)
         
-        embed = discord.Embed(title=f"🪙 Крипто-гаманець: {self.target_user.name}", color=0xf2a900)
+        embed = discord.Embed(title=f"Крипто-гаманець: {self.target_user.name}", color=0xf2a900)
         crypto_data = user_data.get("crypto", {})
         desc = "\n".join([f"**{sym}**: `{amt:.4f}`" for sym, amt in crypto_data.items() if amt > 0])
         embed.description = desc if desc else "Гаманець порожній."
@@ -138,7 +138,6 @@ class MainProfileView(discord.ui.View):
     async def dislike_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_vote(interaction, "dislike")
 
-        
 # ==========================================
 # COG КЛАС
 # ==========================================
@@ -165,7 +164,6 @@ class ProfileCog(commands.Cog):
         u.setdefault("last_seen", 0)
         u.setdefault("voters", {})
 
-        # Автоматичне очищення старого ключа property з БД
         if "property" in u:
             del u["property"]
 
@@ -183,9 +181,9 @@ class ProfileCog(commands.Cog):
         embed = discord.Embed(title=f"👤 Профіль: {user.name}", color=0x2b2d31)
         embed.set_thumbnail(url=user.display_avatar.url)
 
-        embed.add_field(name="💳 Рівень / Баланс", value=f"Рівень: `{user_data['level']}`\nГотівка: `{user_data['balance']} AC`", inline=True)
-        embed.add_field(name="⭐ Рейтинг", value=f"👍 `{user_data['likes']}` | 👎 `{user_data['dislikes']}`", inline=True)
-        embed.add_field(name="📊 Статус", value=f"**{user_data['mod_mark']}**", inline=True)
+        embed.add_field(name="Рівень / Баланс", value=f"Рівень: `{user_data['level']}`\nГотівка: `{user_data['balance']} AC`", inline=True)
+        embed.add_field(name="Рейтинг", value=f"👍 `{user_data['likes']}` | 👎 `{user_data['dislikes']}`", inline=True)
+        embed.add_field(name="Статус", value=f"**{user_data['mod_mark']}**", inline=True)
 
         if member:
             joined = f"<t:{int(member.joined_at.timestamp())}:D>"
@@ -196,23 +194,22 @@ class ProfileCog(commands.Cog):
             role = "@everyone"
             state = "⚪ Офлайн-профіль"
 
-        # Якщо ти додав роботу з попереднього мого повідомлення, код роботи йде сюди:
         job_info = user_data.get("job", {})
         if job_info.get("company_id"):
-            embed.add_field(name="💼 Робота", value=f"Посада: `{job_info['profession'].capitalize()}`", inline=True)
+            embed.add_field(name="Робота", value=f"Посада: `{job_info['profession'].capitalize()}`", inline=True)
         else:
-            embed.add_field(name="💼 Робота", value="Безробітний", inline=True)
+            embed.add_field(name="Робота", value="Безробітний", inline=True)
 
         embed.add_field(name="📅 Приєднання", value=joined, inline=True)
-        embed.add_field(name="🎭 Найвища роль", value=role, inline=True)
-        embed.add_field(name="📡 Стан", value=state, inline=True)
+        embed.add_field(name="Найвища роль", value=role, inline=True)
+        embed.add_field(name="Стан", value=state, inline=True)
         
-        embed.add_field(name="💬 Активність", value=f"Повідомлень: `{user_data['messages']}`\nОстанній раз: {last_seen}", inline=False)
+        embed.add_field(name="Активність", value=f"Повідомлень: `{user_data['messages']}`\nОстанній раз: {last_seen}", inline=False)
         embed.set_footer(text=f"ID: {user.id}")
         return embed
 
     def build_stats_embed(self, user: discord.User, user_data: dict) -> discord.Embed:
-        embed = discord.Embed(title=f"📊 Характеристики: {user.name}", color=0x3498db)
+        embed = discord.Embed(title=f"Характеристики: {user.name}", color=0x3498db)
         s = user_data["stats"]
         desc = (f"⚔️ Сила: `{s['strength']}`\n🏃 Спритність: `{s['agility']}`\n❤️ Тілобудова: `{s['physique']}`\n"
                 f"🧠 Інтелект: `{s['intelligence']}`\n📖 Мудрість: `{s['wisdom']}`\n🎭 Харизма: `{s['charisma']}`")
@@ -272,7 +269,7 @@ class ProfileCog(commands.Cog):
         user_data = self.get_user_data(data, user.id)
         user_data["mod_mark"] = mark.value
         save_guild_json(guild_id, DATA_FILE, data)
-        await interaction.response.send_message(f"✅ Позначку для **{user.name}** змінено на: **{mark.value}**.", ephemeral=True)
+        await interaction.response.send_message(f"Позначку для **{user.name}** змінено на: **{mark.value}**.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(ProfileCog(bot))

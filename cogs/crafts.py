@@ -80,7 +80,7 @@ class CraftQueueView(discord.ui.View):
 
     @discord.ui.button(label="Оновити статус", style=discord.ButtonStyle.primary, emoji="🔄", row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("❌ Не ваш профіль.", ephemeral=True)
+        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("Не ваш профіль.", ephemeral=True)
         await self.cog.show_queue(interaction, self.user_id, edit=True)
 
     @discord.ui.select(placeholder="Скасувати крафт (Оберіть номер у черзі)...", min_values=1, max_values=1, options=[
@@ -91,7 +91,7 @@ class CraftQueueView(discord.ui.View):
         discord.SelectOption(label="Відмінити Слот 5", value="4"),
     ], row=0)
     async def cancel_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("❌ Це не ваша черга.", ephemeral=True)
+        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("Це не ваша черга.", ephemeral=True)
         
         index = int(select.values[0])
         guild_id = interaction.guild.id
@@ -103,7 +103,7 @@ class CraftQueueView(discord.ui.View):
         queue = user_data["crafting_queue"]
         
         if index >= len(queue):
-            return await interaction.response.send_message("❌ У цьому слоті немає крафту.", ephemeral=True)
+            return await interaction.response.send_message("У цьому слоті немає крафту.", ephemeral=True)
             
         canceled_item = queue.pop(index)
         costs = canceled_item.get("costs", {})
@@ -128,7 +128,7 @@ class CraftQueueView(discord.ui.View):
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         
-        await interaction.response.send_message(f"✅ Крафт скасовано. Ресурси та гроші частково/повністю повернуто на ваші рахунки.", ephemeral=True)
+        await interaction.response.send_message(f"Крафт скасовано. Ресурси та гроші частково/повністю повернуто на ваші рахунки.", ephemeral=True)
         await self.cog.show_queue(interaction, self.user_id, edit=True)
 
 # ==========================================
@@ -166,7 +166,7 @@ class CraftRecipeSelect(discord.ui.Select):
         queue = user_data["crafting_queue"]
         
         if len(queue) >= 5:
-            return await interaction.response.send_message("❌ Ваша черга крафту заповнена (Максимум 5 предметів). Зачекайте завершення.", ephemeral=True)
+            return await interaction.response.send_message("Ваша черга крафту заповнена (Максимум 5 предметів). Зачекайте завершення.", ephemeral=True)
 
         # === ПЕРЕВІРКА РЕСУРСІВ ===
         req_money = recipe.get("req_money", 0)
@@ -174,11 +174,11 @@ class CraftRecipeSelect(discord.ui.Select):
         req_items = recipe.get("req_items", {})
 
         if user_data["balance"] < req_money:
-            return await interaction.response.send_message(f"❌ Недостатньо AC. Потрібно: {req_money}", ephemeral=True)
+            return await interaction.response.send_message(f"Недостатньо AC. Потрібно: {req_money}", ephemeral=True)
             
         for r_type, amt in req_raw.items():
             if get_user_raw_amount(mono_data, user_id, r_type) < amt:
-                return await interaction.response.send_message(f"❌ Недостатньо сировини: **{RAW_NAMES.get(r_type, r_type)}**. Потрібно: {amt}", ephemeral=True)
+                return await interaction.response.send_message(f"Недостатньо сировини: **{RAW_NAMES.get(r_type, r_type)}**. Потрібно: {amt}", ephemeral=True)
                 
         from collections import Counter
         inv_counts = Counter(user_data["inventory"])
@@ -186,7 +186,7 @@ class CraftRecipeSelect(discord.ui.Select):
         for i_id, amt in req_items.items():
             if inv_counts.get(i_id, 0) < amt:
                 item_name = self.items_db.get(i_id, {}).get("name", i_id)
-                return await interaction.response.send_message(f"❌ Недостатньо предметів: **{item_name}**. Потрібно: {amt}", ephemeral=True)
+                return await interaction.response.send_message(f"Недостатньо предметів: **{item_name}**. Потрібно: {amt}", ephemeral=True)
             items_to_remove.extend([i_id] * amt)
 
         # === СПИСАННЯ РЕСУРСІВ ===
@@ -223,7 +223,7 @@ class CraftRecipeSelect(discord.ui.Select):
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         
         target_name = self.items_db.get(recipe["target_item"], {}).get("name", "Предмет")
-        await interaction.response.send_message(f"✅ Виготовлення **{target_name}** успішно додано до черги! Завершиться <t:{end_time}:R>.", ephemeral=True)
+        await interaction.response.send_message(f"Виготовлення **{target_name}** успішно додано до черги! Завершиться <t:{end_time}:R>.", ephemeral=True)
 
 class CraftMenuView(discord.ui.View):
     def __init__(self, cog, recipes: dict, items_db: dict):
@@ -298,11 +298,11 @@ class CraftsCog(commands.Cog):
                         if crafted_count > 0:
                             user_data["inventory"].extend([finished_item["target_item"]] * crafted_count)
                             if member:
-                                try: await member.send(f"✅ Ваш крафт завершено! Ви отримали: **{target_name}** (x{crafted_count}).")
+                                try: await member.send(f"Ваш крафт завершено! Ви отримали: **{target_name}** (x{crafted_count}).")
                                 except: pass
                         else:
                             if member:
-                                try: await member.send(f"❌ Крафт не вдався... Ваші ресурси згоріли під час спроби зробити **{target_name}**.")
+                                try: await member.send(f"Крафт не вдався... Ваші ресурси згоріли під час спроби зробити **{target_name}**.")
                                 except: pass
 
                 if updated:
@@ -403,7 +403,7 @@ class CraftsCog(commands.Cog):
         
         target_item = target_item.lower().strip().replace(" ", "_")
         if target_item not in items_db:
-            return await interaction.response.send_message(f"❌ Предмет `{target_item}` не існує в базі. Створіть його через /item_create.", ephemeral=True)
+            return await interaction.response.send_message(f"Предмет `{target_item}` не існує в базі. Створіть його через /item_create.", ephemeral=True)
             
         recipe_id = str(uuid.uuid4())[:6]
         parsed_items = parse_items_string(req_items)
@@ -423,7 +423,7 @@ class CraftsCog(commands.Cog):
         }
         
         save_guild_json(guild_id, CRAFTS_FILE, recipes)
-        await interaction.response.send_message(f"✅ Рецепт успішно створено! ID рецепту: `{recipe_id}`", ephemeral=True)
+        await interaction.response.send_message(f"Рецепт успішно створено! ID рецепту: `{recipe_id}`", ephemeral=True)
 
     @app_commands.command(name="admin_craft_remove", description="[АДМІН] Видалити рецепт за його ID")
     @app_commands.default_permissions(administrator=True)
@@ -432,11 +432,11 @@ class CraftsCog(commands.Cog):
         recipes = load_guild_json(guild_id, CRAFTS_FILE)
         
         if recipe_id not in recipes:
-            return await interaction.response.send_message("❌ Рецепт з таким ID не знайдено.", ephemeral=True)
+            return await interaction.response.send_message("Рецепт з таким ID не знайдено.", ephemeral=True)
             
         del recipes[recipe_id]
         save_guild_json(guild_id, CRAFTS_FILE, recipes)
-        await interaction.response.send_message(f"🗑️ Рецепт `{recipe_id}` видалено.", ephemeral=True)
+        await interaction.response.send_message(f"Рецепт `{recipe_id}` видалено.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(CraftsCog(bot))

@@ -36,9 +36,9 @@ class ShopCog(commands.Cog):
         if processed_id in shop:
             del shop[processed_id]
             save_guild_json(guild_id, SHOP_FILE, shop)
-            await interaction.response.send_message(f"🗑️ Предмет `{processed_id}` прибрано з магазину.")
+            await interaction.response.send_message(f"Предмет `{processed_id}` прибрано з магазину.")
         else:
-            await interaction.response.send_message("❌ Цього предмета немає в магазині.", ephemeral=True)
+            await interaction.response.send_message("Цього предмета немає в магазині.", ephemeral=True)
 
 
     @app_commands.command(name="shop", description="Показати товари в магазині")
@@ -75,7 +75,7 @@ class ShopCog(commands.Cog):
     @app_commands.guild_only()
     async def buy(self, interaction: discord.Interaction, item_id: str, amount: int = 1):
         if amount <= 0: 
-            return await interaction.response.send_message("❌ Кількість має бути 1 або більше.", ephemeral=True)
+            return await interaction.response.send_message("Кількість має бути 1 або більше.", ephemeral=True)
         
         guild_id = interaction.guild.id
         processed_id = self.format_id(item_id)
@@ -83,7 +83,7 @@ class ShopCog(commands.Cog):
         templates = load_guild_json(guild_id, ITEMS_TEMPLATES)
         
         if processed_id not in shop:
-            return await interaction.response.send_message("❌ Цього товару немає в магазині.", ephemeral=True)
+            return await interaction.response.send_message("Цього товару немає в магазині.", ephemeral=True)
         
         item_shop = shop[processed_id]
         total_cost = item_shop["price"] * amount
@@ -92,11 +92,11 @@ class ShopCog(commands.Cog):
         user = self.get_user(data, interaction.user.id)
 
         if user["balance"] < total_cost:
-            return await interaction.response.send_message(f"❌ Недостатньо AC! Треба `{total_cost}`, а у вас `{user['balance']}`.", ephemeral=True)
+            return await interaction.response.send_message(f"Недостатньо AC! Треба `{total_cost}`, а у вас `{user['balance']}`.", ephemeral=True)
 
         if item_shop["stock"] != -1:
             if item_shop["stock"] < amount:
-                return await interaction.response.send_message(f"❌ В наявності лише {item_shop['stock']} шт.!", ephemeral=True)
+                return await interaction.response.send_message(f"В наявності лише {item_shop['stock']} шт.!", ephemeral=True)
             shop[processed_id]["stock"] -= amount
 
         user["balance"] -= total_cost
@@ -105,13 +105,13 @@ class ShopCog(commands.Cog):
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, SHOP_FILE, shop)
         
-        await interaction.response.send_message(f"✅ Ви купили **{templates[processed_id]['name']}** (x{amount}) за `{total_cost} AC`!")
+        await interaction.response.send_message(f"Ви купили **{templates[processed_id]['name']}** (x{amount}) за `{total_cost} AC`!")
 
     @app_commands.command(name="sell", description="Продати предмет з рюкзака назад у магазин")
     @app_commands.guild_only()
     async def sell(self, interaction: discord.Interaction, item_id: str, amount: int = 1):
         if amount <= 0: 
-            return await interaction.response.send_message("❌ Кількість має бути 1 або більше.", ephemeral=True)
+            return await interaction.response.send_message("Кількість має бути 1 або більше.", ephemeral=True)
         
         guild_id = interaction.guild.id
         processed_id = self.format_id(item_id)
@@ -122,10 +122,10 @@ class ShopCog(commands.Cog):
         user = self.get_user(data, interaction.user.id)
         
         if user["inventory"].count(processed_id) < amount:
-            return await interaction.response.send_message(f"❌ У вас немає {amount} шт. предмета `{processed_id}`.", ephemeral=True)
+            return await interaction.response.send_message(f"У вас немає {amount} шт. предмета `{processed_id}`.", ephemeral=True)
 
         if processed_id not in shop:
-            return await interaction.response.send_message("❌ Магазин не скуповує цей товар. (Його немає в асортименті).", ephemeral=True)
+            return await interaction.response.send_message("Магазин не скуповує цей товар. (Його немає в асортименті).", ephemeral=True)
 
         sell_reward = shop[processed_id]["sell_price"] * amount
         
@@ -153,7 +153,7 @@ class ShopCog(commands.Cog):
         
         templates = load_guild_json(guild_id, ITEMS_TEMPLATES)
         if processed_id not in templates:
-            return await interaction.response.send_message(f"❌ Предмета `{processed_id}` немає в базі шаблонів!", ephemeral=True)
+            return await interaction.response.send_message(f"Предмета `{processed_id}` немає в базі шаблонів!", ephemeral=True)
 
         shop = load_guild_json(guild_id, SHOP_FILE)
         shop[processed_id] = {
@@ -164,7 +164,7 @@ class ShopCog(commands.Cog):
         
         save_guild_json(guild_id, SHOP_FILE, shop)
         await interaction.response.send_message(
-            f"✅ Предмет **{templates[processed_id]['name']}** додано в магазин!\n"
+            f"Предмет **{templates[processed_id]['name']}** додано в магазин!\n"
             f"💰 Ціна: `{price} AC` | 💵 Викуп: `{sell_price} AC` | 📦 Сток: {'∞' if stock == -1 else stock}"
         )
 
@@ -173,14 +173,14 @@ class ShopCog(commands.Cog):
     @app_commands.guild_only()
     async def shop_restock(self, interaction: discord.Interaction, item_id: str, amount: int):
         if amount <= 0:
-            return await interaction.response.send_message("❌ Кількість для поповнення має бути більшою за 0.", ephemeral=True)
+            return await interaction.response.send_message("Кількість для поповнення має бути більшою за 0.", ephemeral=True)
 
         guild_id = interaction.guild.id
         processed_id = self.format_id(item_id)
         shop = load_guild_json(guild_id, SHOP_FILE)
 
         if processed_id not in shop:
-            return await interaction.response.send_message(f"❌ Предмета `{processed_id}` немає в асортименті магазину!", ephemeral=True)
+            return await interaction.response.send_message(f"Предмета `{processed_id}` немає в асортименті магазину!", ephemeral=True)
 
         if shop[processed_id]["stock"] == -1:
             return await interaction.response.send_message(f"📦 Предмет `{processed_id}` і так має нескінченний запас.", ephemeral=True)

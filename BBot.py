@@ -45,7 +45,7 @@ class HelpView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author_id:
-            await interaction.response.send_message("❌ Ви не можете взаємодіяти з цим меню, оскільки його викликав інший гравець. Пропишіть `/help` самостійно.", ephemeral=True)
+            await interaction.response.send_message("Ви не можете взаємодіяти з цим меню, оскільки його викликав інший гравець. Пропишіть `/help` самостійно.", ephemeral=True)
             return False
         return True
 
@@ -110,9 +110,9 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     traceback.print_exception(type(error), error, error.__traceback__)
     print("="*50 + "\n")
 
-    bot.add_custom_log(f"❌ Помилка в `/{command_name}` від {interaction.user.display_name}")
+    bot.add_custom_log(f"Помилка в `/{command_name}` від {interaction.user.display_name}")
 
-    user_msg = "❌ Ой, сталася внутрішня помилка. Розробник вже отримав чашку чаю, щоб пофіксити її!"
+    user_msg = "Ой, сталася внутрішня помилка. Розробник вже отримав чашку чаю, щоб пофіксити її!"
     
     try:
         if not interaction.response.is_done():

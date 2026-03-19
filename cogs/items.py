@@ -38,8 +38,6 @@ class ItemsCog(commands.Cog):
         except Exception as e:
             print(f"[Error] Не вдалося зняти роль: {e}")
 
-
-  
     @app_commands.command(name="items_list", description="Переглянути всі існуючі предмети")
     @app_commands.guild_only()
     async def items_list(self, interaction: discord.Interaction):
@@ -58,7 +56,6 @@ class ItemsCog(commands.Cog):
         embed.description = "\n".join(lines)
         await interaction.response.send_message(embed=embed)
 
-  
     @app_commands.command(name="inventory", description="Переглянути свій рюкзак")
     @app_commands.guild_only()
     async def inventory(self, interaction: discord.Interaction):
@@ -73,7 +70,7 @@ class ItemsCog(commands.Cog):
             return await interaction.response.send_message("Ваш рюкзак порожній.", ephemeral=True)
 
         counts = Counter(user_inv)
-        embed = discord.Embed(title=f"🎒 Інвентар {interaction.user.display_name}", color=0x3498db)
+        embed = discord.Embed(title=f"Інвентар {interaction.user.display_name}", color=0x3498db)
         
         lines = []
         for i_id, count in counts.items():
@@ -87,21 +84,21 @@ class ItemsCog(commands.Cog):
     @app_commands.guild_only()
     async def gift(self, interaction: discord.Interaction, member: discord.User, item_id: str, amount: int = 1):
         if amount <= 0 or member.id == interaction.user.id or member.bot:
-            return await interaction.response.send_message("❌ Некоректна кількість або ціль.", ephemeral=True)
+            return await interaction.response.send_message("Некоректна кількість або ціль.", ephemeral=True)
 
         guild_id = interaction.guild.id
         processed_id = self.format_id(item_id)
         templates = load_guild_json(guild_id, ITEMS_TEMPLATES)
         
         if processed_id not in templates:
-            return await interaction.response.send_message("❌ Такого предмета не існує.", ephemeral=True)
+            return await interaction.response.send_message("Такого предмета не існує.", ephemeral=True)
 
         data = load_guild_json(guild_id, DATA_FILE)
         sender = self.get_user(data, interaction.user.id)
         receiver = self.get_user(data, member.id)
 
         if sender["inventory"].count(processed_id) < amount:
-            return await interaction.response.send_message(f"❌ У вас недостатньо `{processed_id}` x{amount}.", ephemeral=True)
+            return await interaction.response.send_message(f"У вас недостатньо `{processed_id}` x{amount}.", ephemeral=True)
 
         for _ in range(amount):
             sender["inventory"].remove(processed_id)
@@ -121,7 +118,7 @@ class ItemsCog(commands.Cog):
 
         if processed_id not in templates:
             return await interaction.response.send_message(
-                f"❌ Предмет з ID `{processed_id}` не знайдено в базі!", 
+                f"Предмет з ID `{processed_id}` не знайдено в базі!", 
                 ephemeral=True
             )
 
@@ -132,7 +129,7 @@ class ItemsCog(commands.Cog):
         save_guild_json(guild_id, ITEMS_TEMPLATES, templates)
         
         emb = discord.Embed(
-            title="🗑️ Предмет видалено", 
+            title="Предмет видалено", 
             description=f"Шаблон предмета **{item_name}** (`{processed_id}`) повністю видалено з бази сервера.",
             color=0xe74c3c
         )
@@ -147,7 +144,7 @@ class ItemsCog(commands.Cog):
         if not templates:
             return await interaction.response.send_message("База предметів порожня.", ephemeral=True)
 
-        embed = discord.Embed(title="📜 Реєстр предметів сервера", color=0x95a5a6)
+        embed = discord.Embed(title="Реєстр предметів сервера", color=0x95a5a6)
         
         lines = []
         for i_id, info in templates.items():
@@ -165,7 +162,7 @@ class ItemsCog(commands.Cog):
         processed_id = self.format_id(item_id)
         
         if processed_id not in templates:
-            return await interaction.response.send_message(f"❌ Предмет з ID `{processed_id}` не знайдено!", ephemeral=True)
+            return await interaction.response.send_message(f"Предмет з ID `{processed_id}` не знайдено!", ephemeral=True)
 
         data = load_guild_json(guild_id, DATA_FILE)
         user = self.get_user(data, member.id)
@@ -188,7 +185,7 @@ class ItemsCog(commands.Cog):
             return await interaction.response.send_message("Ваш рюкзак порожній.", ephemeral=True)
 
         counts = Counter(user_inv)
-        embed = discord.Embed(title=f"🎒 Інвентар {interaction.user.display_name}", color=0x3498db)
+        embed = discord.Embed(title=f"Інвентар {interaction.user.display_name}", color=0x3498db)
         
         lines = []
         for i_id, count in counts.items():
@@ -202,21 +199,21 @@ class ItemsCog(commands.Cog):
     @app_commands.guild_only()
     async def gift(self, interaction: discord.Interaction, member: discord.User, item_id: str, amount: int = 1):
         if amount <= 0 or member.id == interaction.user.id or member.bot:
-            return await interaction.response.send_message("❌ Некоректна кількість або ціль.", ephemeral=True)
+            return await interaction.response.send_message("Некоректна кількість або ціль.", ephemeral=True)
 
         guild_id = interaction.guild.id
         processed_id = self.format_id(item_id)
         templates = load_guild_json(guild_id, ITEMS_TEMPLATES)
         
         if processed_id not in templates:
-            return await interaction.response.send_message("❌ Такого предмета не існує.", ephemeral=True)
+            return await interaction.response.send_message("Такого предмета не існує.", ephemeral=True)
 
         data = load_guild_json(guild_id, DATA_FILE)
         sender = self.get_user(data, interaction.user.id)
         receiver = self.get_user(data, member.id)
 
         if sender["inventory"].count(processed_id) < amount:
-            return await interaction.response.send_message(f"❌ У вас недостатньо `{processed_id}` x{amount}.", ephemeral=True)
+            return await interaction.response.send_message(f"У вас недостатньо `{processed_id}` x{amount}.", ephemeral=True)
 
         for _ in range(amount):
             sender["inventory"].remove(processed_id)
@@ -236,11 +233,11 @@ class ItemsCog(commands.Cog):
         user = self.get_user(data, interaction.user.id)
         
         if processed_id not in user["inventory"]:
-            return await interaction.response.send_message("❌ У вас немає цього предмета!", ephemeral=True)
+            return await interaction.response.send_message("У вас немає цього предмета!", ephemeral=True)
 
         item = templates.get(processed_id)
         if not item: 
-            return await interaction.response.send_message("❌ Шаблон цього предмета не знайдено.")
+            return await interaction.response.send_message("Шаблон цього предмета не знайдено.")
 
         log = []
         
@@ -265,10 +262,10 @@ class ItemsCog(commands.Cog):
                     duration = item.get("role_duration", 0)
                     
                     if duration > 0:
-                        log.append(f"🎭 Отримано роль: **{role.name}** на {duration} хв.")
+                        log.append(f"Отримано роль: **{role.name}** на {duration} хв.")
                         asyncio.create_task(self.remove_role_later(interaction.user, role, duration))
                     else:
-                        log.append(f"🎭 Отримано роль: **{role.name}**")
+                        log.append(f"Отримано роль: **{role.name}**")
                 except:
                     log.append("⚠️ Помилка видачі ролі (перевірте ієрархію бота)")
 
@@ -326,7 +323,7 @@ class ItemsCog(commands.Cog):
         
         save_guild_json(guild_id, ITEMS_TEMPLATES, templates)
         
-        emb = discord.Embed(title="✅ Предмет створено", color=0x2ecc71)
+        emb = discord.Embed(title="Предмет створено", color=0x2ecc71)
         emb.add_field(name="Назва", value=f"{rarity.value} **{name}**", inline=True)
         emb.add_field(name="ID", value=f"`{processed_id}`", inline=True)
         
@@ -335,7 +332,7 @@ class ItemsCog(commands.Cog):
         if give_xp_levels: effects.append(f"✨ +{give_xp_levels} LVL")
         if give_role: 
             dur_text = f"(на {role_duration} хв.)" if role_duration > 0 else "(назавжди)"
-            effects.append(f"🎭 Роль: {give_role.mention} {dur_text}")
+            effects.append(f"Роль: {give_role.mention} {dur_text}")
         if stat_to_boost: effects.append(f"📊 {stat_to_boost.name}: +{stat_value}")
         
         emb.add_field(name="Ефекти", value="\n".join(effects) if effects else "Декор", inline=False)
@@ -352,7 +349,7 @@ class ItemsCog(commands.Cog):
 
         if processed_id not in templates:
             return await interaction.response.send_message(
-                f"❌ Предмет з ID `{processed_id}` не знайдено в базі!", 
+                f"Предмет з ID `{processed_id}` не знайдено в базі!", 
                 ephemeral=True
             )
 
@@ -378,7 +375,7 @@ class ItemsCog(commands.Cog):
         processed_id = self.format_id(item_id)
         
         if processed_id not in templates:
-            return await interaction.response.send_message(f"❌ Предмет з ID `{processed_id}` не знайдено!", ephemeral=True)
+            return await interaction.response.send_message(f"Предмет з ID `{processed_id}` не знайдено!", ephemeral=True)
 
         data = load_guild_json(guild_id, DATA_FILE)
         user = self.get_user(data, member.id) 

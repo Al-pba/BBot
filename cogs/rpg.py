@@ -293,9 +293,9 @@ class RPGCog(commands.Cog):
     @app_commands.guild_only()
     async def steal(self, interaction: discord.Interaction, victim: discord.User):
         if victim.id == interaction.user.id:
-            return await interaction.response.send_message("❌ Ви не можете обікрасти самого себе.", ephemeral=True)
+            return await interaction.response.send_message("Ви не можете обікрасти самого себе.", ephemeral=True)
         if victim.bot:
-            return await interaction.response.send_message("❌ У ботів немає кишень.", ephemeral=True)
+            return await interaction.response.send_message("У ботів немає кишень.", ephemeral=True)
             
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -304,13 +304,13 @@ class RPGCog(commands.Cog):
         victim_data = self.get_user(data, str(victim.id))
         
         if thief_data.get("caught_until", 0) > int(time.time()):
-            return await interaction.response.send_message("❌ Ви спіймані на гарячому! Ви не можете красти, поки жертва не вирішить вашу долю.", ephemeral=True)
+            return await interaction.response.send_message("Ви спіймані на гарячому! Ви не можете красти, поки жертва не вирішить вашу долю.", ephemeral=True)
         
         if thief_data.get("steal_cooldown", 0) > int(time.time()):
             return await interaction.response.send_message(f"⏳ Заляжте на дно. Ви зможете красти знову <t:{thief_data['steal_cooldown']}:R>.", ephemeral=True)
             
         if victim_data["balance"] < 100:
-            return await interaction.response.send_message("❌ У цієї цілі занадто мало грошей у гаманці. Це того не варте.", ephemeral=True)
+            return await interaction.response.send_message("У цієї цілі занадто мало грошей у гаманці. Це того не варте.", ephemeral=True)
 
         thief_agi = thief_data["stats"].get("agility", 1)
         victim_wis = victim_data["stats"].get("wisdom", 1)
@@ -348,8 +348,6 @@ class RPGCog(commands.Cog):
     @app_commands.command(name="bail", description="Внести заставу за зв'язаного гравця (1000 AC)")
     @app_commands.guild_only()
     async def bail(self, interaction: discord.Interaction, member: discord.User):
-        # Зв'язаний гравець не зможе використати цю команду на себе, 
-        # бо його заблокує global_tie_check ще до виконання цього коду!
         
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -358,24 +356,19 @@ class RPGCog(commands.Cog):
         target_data = self.get_user(data, str(member.id))
         payer_data = self.get_user(data, str(interaction.user.id))
         
-        # Перевіряємо, чи гравець дійсно зв'язаний
         if target_data.get("tied_up_until", 0) <= int(time.time()):
             return await interaction.response.send_message(f"❌ {member.display_name} зараз не зв'язаний. Застава не потрібна.", ephemeral=True)
             
-        bail_cost = 1000 # Ціна застави (можеш змінити на будь-яку)
+        bail_cost = 1000
         
-        # Перевіряємо баланс "рятівника"
         if payer_data["balance"] < bail_cost:
             return await interaction.response.send_message(f"❌ У вас недостатньо коштів! Застава коштує `{bail_cost} AC`.", ephemeral=True)
             
-        # Забираємо гроші у рятівника та відправляємо в Казну сервера
         payer_data["balance"] -= bail_cost
         config["server_bank"] = config.get("server_bank", 0) + bail_cost
         
-        # Звільняємо ув'язненого
         target_data["tied_up_until"] = 0
         
-        # Зберігаємо дані
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, ECONOMY_CONFIG, config)
         
@@ -390,7 +383,7 @@ class RPGCog(commands.Cog):
         config["daily_channel_id"] = channel.id
         save_guild_json(guild_id, RPG_CONFIG, config)
         
-        await interaction.response.send_message(f"✅ Тепер дейліки будуть з'являтися у каналі {channel.mention} щодня о 18:00.")
+        await interaction.response.send_message(f"Тепер дейліки будуть з'являтися у каналі {channel.mention} щодня о 18:00.")
 
     @app_commands.command(name="admin_give_stat", description="[АДМІН] Додати характеристику гравцю")
     @app_commands.default_permissions(administrator=True)
@@ -419,7 +412,7 @@ class RPGCog(commands.Cog):
             new_val = user_data["stats"][stat.value]
             
         save_guild_json(guild_id, DATA_FILE, data)
-        await interaction.response.send_message(f"✅ Адміністратор видав `+{amount}` до **{stat_name}** для {member.mention}. Тепер рівень: **{new_val}**.", ephemeral=True)
+        await interaction.response.send_message(f"Адміністратор видав `+{amount}` до **{stat_name}** для {member.mention}. Тепер рівень: **{new_val}**.", ephemeral=True)
 
 
 async def setup(bot):

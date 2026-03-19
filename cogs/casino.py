@@ -33,6 +33,8 @@ def process_bet(user_data, casino_config, bet_amount: int) -> bool:
     if bet_amount > casino_config.get("max_bet", 1000): return False
     if user_data.get("chips", 0) < bet_amount: return False
     
+    if user_data.get("restricted_casino"): return False
+
     user_data["chips"] -= bet_amount
     update_activity(user_data)
     return True
@@ -61,7 +63,7 @@ class RouletteBetModal(discord.ui.Modal):
         try:
             bet_amount = int(self.bet_input.value)
         except ValueError:
-            return await interaction.response.send_message("❌ Введіть ціле число!", ephemeral=True)
+            return await interaction.response.send_message("Введіть ціле число!", ephemeral=True)
 
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -72,10 +74,10 @@ class RouletteBetModal(discord.ui.Modal):
         user_data = data[uid]
 
         if bet_amount > casino_conf.get("max_bet", 1000):
-            return await interaction.response.send_message(f"❌ Максимальна ставка: {casino_conf.get('max_bet')} фішок.", ephemeral=True)
+            return await interaction.response.send_message(f"Максимальна ставка: {casino_conf.get('max_bet')} фішок.", ephemeral=True)
 
         if not process_bet(user_data, casino_conf, bet_amount):
-            return await interaction.response.send_message("❌ У вас недостатньо фішок для цієї ставки!", ephemeral=True)
+            return await interaction.response.send_message("У вас недостатньо фішок для цієї ставки!", ephemeral=True)
 
         casino_conf["bank"] += bet_amount
 
@@ -94,7 +96,7 @@ class RouletteBetModal(discord.ui.Modal):
         is_even = result_num != 0 and result_num % 2 == 0
         is_odd = result_num != 0 and result_num % 2 != 0
         
-        color_emoji = "🟩" if result_num == 0 else ("🟥" if is_red else "⬛")
+        color_emoji = "🟢" if result_num == 0 else ("🔴" if is_red else "⬛")
 
         win = False
         if self.bet_type == "color":
@@ -278,7 +280,7 @@ class CasinoCog(commands.Cog):
     @app_commands.command(name="chips_buy", description="Купити фішки казино (Курс 1 фішка = 100 AC)")
     @app_commands.guild_only()
     async def buy_chips(self, interaction: discord.Interaction, amount: int):
-        if amount <= 0: return await interaction.response.send_message("❌ Кількість має бути більше 0.", ephemeral=True)
+        if amount <= 0: return await interaction.response.send_message("Кількість має бути більше 0.", ephemeral=True)
         
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -288,7 +290,7 @@ class CasinoCog(commands.Cog):
         
         cost = amount * 100
         if user.get("balance", 0) < cost:
-            return await interaction.response.send_message(f"❌ Недостатньо AC. Потрібно `{cost} AC`.", ephemeral=True)
+            return await interaction.response.send_message(f"Недостатньо AC. Потрібно `{cost} AC`.", ephemeral=True)
             
         user["balance"] -= cost
         user["chips"] = user.get("chips", 0) + amount
@@ -300,12 +302,12 @@ class CasinoCog(commands.Cog):
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, CASINO_CONFIG, conf)
         
-        await interaction.response.send_message(f"🎰 Ви купили `{amount}` фішок за `{cost} AC`. Хай щастить!", ephemeral=True)
+        await interaction.response.send_message(f"Ви купили `{amount}` фішок за `{cost} AC`. Хай щастить!", ephemeral=True)
 
     @app_commands.command(name="chips_sell", description="Продати фішки (Курс 1 фішка = 90 AC)")
     @app_commands.guild_only()
     async def sell_chips(self, interaction: discord.Interaction, amount: int):
-        if amount <= 0: return await interaction.response.send_message("❌ Кількість має бути більше 0.", ephemeral=True)
+        if amount <= 0: return await interaction.response.send_message("Кількість має бути більше 0.", ephemeral=True)
         
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -313,7 +315,7 @@ class CasinoCog(commands.Cog):
         user = data.get(uid, {})
         
         if user.get("chips", 0) < amount:
-            return await interaction.response.send_message(f"❌ У вас немає стільки фішок.", ephemeral=True)
+            return await interaction.response.send_message(f"У вас немає стільки фішок.", ephemeral=True)
             
         revenue = amount * 90
         user["chips"] -= amount
@@ -339,7 +341,7 @@ class CasinoCog(commands.Cog):
         balance = user_data.get("balance", 0)
         
         embed = discord.Embed(
-            title="🎰 Каса Казино",
+            title="Каса Казино",
             description="Ваші поточні рахунки:",
             color=0xf1c40f 
         )
@@ -358,7 +360,7 @@ class CasinoCog(commands.Cog):
     @app_commands.guild_only()
     async def roulette(self, interaction: discord.Interaction):
         embed = discord.Embed(
-            title="Рулетка 🎰", 
+            title="Рулетка", 
             description="Зроби ставку, натиснувши кнопку або вибравши опцію нижче!\n\n*Курс: 1 фішка = 100 AC.*",
             color=0x2b2d31
         )
@@ -374,7 +376,7 @@ class CasinoCog(commands.Cog):
         user = data.get(uid, {})
 
         if not process_bet(user, conf, bet):
-            return await interaction.response.send_message("❌ Некоректна ставка або недостатньо фішок (або перевищено ліміт).", ephemeral=True)
+            return await interaction.response.send_message("Некоректна ставка або недостатньо фішок (або перевищено ліміт).", ephemeral=True)
 
         conf["bank"] += bet
         save_guild_json(guild_id, DATA_FILE, data)
@@ -383,9 +385,9 @@ class CasinoCog(commands.Cog):
 
         emojis = ["🍒", "🍋", "🔔", "🍉", "⭐", "💎"]
         
-        msg = await interaction.followup.send("🎰 `[ ? | ? | ? ]` Крутимо...", wait=True)
+        msg = await interaction.followup.send("`[ ? | ? | ? ]` Крутимо...", wait=True)
         await asyncio.sleep(1)
-        await msg.edit(content=f"🎰 `[ {random.choice(emojis)} | ? | ? ]` Крутимо...")
+        await msg.edit(content=f"`[ {random.choice(emojis)} | ? | ? ]` Крутимо...")
         await asyncio.sleep(1)
         
         # === ПІДТАСОВКА КАЗИНО (RTP ~ 85%) ===
@@ -443,7 +445,7 @@ class CasinoCog(commands.Cog):
         user = data.get(uid, {})
 
         if not process_bet(user, conf, bet):
-            return await interaction.response.send_message("❌ Некоректна ставка або недостатньо фішок (або перевищено ліміт).", ephemeral=True)
+            return await interaction.response.send_message("Некоректна ставка або недостатньо фішок (або перевищено ліміт).", ephemeral=True)
 
         conf["bank"] += bet
         
@@ -486,7 +488,7 @@ class CasinoCog(commands.Cog):
         conf = get_casino_config(guild_id)
         conf["max_bet"] = max_chips
         save_guild_json(guild_id, CASINO_CONFIG, conf)
-        await interaction.response.send_message(f"✅ Максимальна ставка в казино тепер: `{max_chips}` фішок.", ephemeral=True)
+        await interaction.response.send_message(f"Максимальна ставка в казино тепер: `{max_chips}` фішок.", ephemeral=True)
 
     @app_commands.command(name="casino_fund", description="[АДМІН] Поповнити банк казино напряму")
     @app_commands.default_permissions(administrator=True)
@@ -496,7 +498,7 @@ class CasinoCog(commands.Cog):
         conf = get_casino_config(guild_id)
         conf["bank"] += chips_amount
         save_guild_json(guild_id, CASINO_CONFIG, conf)
-        await interaction.response.send_message(f"✅ Банк казино поповнено на `{chips_amount}`. Поточний банк: `{conf['bank']}`.", ephemeral=True)
+        await interaction.response.send_message(f"Банк казино поповнено на `{chips_amount}`. Поточний банк: `{conf['bank']}`.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(CasinoCog(bot))

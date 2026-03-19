@@ -52,7 +52,7 @@ class ModCog(commands.Cog):
         config["log_channel_id"] = channel.id
         save_guild_json(guild_id, MOD_CONFIG, config)
         
-        await interaction.response.send_message(f"✅ Канал для логів успішно встановлено: {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"Канал для логів успішно встановлено: {channel.mention}", ephemeral=True)
         
         embed = discord.Embed(title="⚙️ Система логування активована", description=f"Модератор {interaction.user.mention} налаштував цей канал для логів.", color=0x2ecc71)
         await self.send_log(interaction.guild, embed)
@@ -65,7 +65,7 @@ class ModCog(commands.Cog):
     async def on_message_delete(self, message: discord.Message):
         if message.author.bot or not message.guild: return
         
-        embed = discord.Embed(title="🗑️ Повідомлення видалено", color=0xe74c3c)
+        embed = discord.Embed(title="Повідомлення видалено", color=0xe74c3c)
         embed.add_field(name="Автор", value=message.author.mention, inline=True)
         embed.add_field(name="Канал", value=message.channel.mention, inline=True)
         if message.content:
@@ -78,7 +78,7 @@ class ModCog(commands.Cog):
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
         if before.author.bot or not before.guild or before.content == after.content: return
         
-        embed = discord.Embed(title="✏️ Повідомлення змінено", color=0xf1c40f, url=after.jump_url)
+        embed = discord.Embed(title="Повідомлення змінено", color=0xf1c40f, url=after.jump_url)
         embed.add_field(name="Автор", value=before.author.mention, inline=True)
         embed.add_field(name="Канал", value=before.channel.mention, inline=True)
         embed.add_field(name="Було", value=before.content[:1024] or "Пусто", inline=False)
@@ -95,14 +95,14 @@ class ModCog(commands.Cog):
     @app_commands.guild_only()
     async def clear(self, interaction: discord.Interaction, amount: int):
         if amount < 1 or amount > 100:
-            return await interaction.response.send_message("❌ Вкажіть кількість від 1 до 100.", ephemeral=True)
+            return await interaction.response.send_message("Вкажіть кількість від 1 до 100.", ephemeral=True)
             
         await interaction.response.defer(ephemeral=True)
         deleted = await interaction.channel.purge(limit=amount)
         
-        await interaction.followup.send(f"✅ Видалено {len(deleted)} повідомлень.", ephemeral=True)
+        await interaction.followup.send(f"Видалено {len(deleted)} повідомлень.", ephemeral=True)
         
-        embed = discord.Embed(title="🧹 Очищення чату", color=0x3498db)
+        embed = discord.Embed(title="Очищення чату", color=0x3498db)
         embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
         embed.add_field(name="Канал", value=interaction.channel.mention, inline=True)
         embed.add_field(name="Кількість", value=str(len(deleted)), inline=True)
@@ -120,7 +120,7 @@ class ModCog(commands.Cog):
     @app_commands.guild_only()
     async def mute(self, interaction: discord.Interaction, member: discord.Member, duration: app_commands.Choice[int], reason: str = "Причина не вказана"):
         if member.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
-            return await interaction.response.send_message("❌ Ви не можете замутити користувача, чия роль вища або дорівнює вашій.", ephemeral=True)
+            return await interaction.response.send_message("Ви не можете замутити користувача, чия роль вища або дорівнює вашій.", ephemeral=True)
             
         time_duration = timedelta(minutes=duration.value)
         try:
@@ -134,7 +134,7 @@ class ModCog(commands.Cog):
             embed.add_field(name="Причина", value=reason, inline=False)
             await self.send_log(interaction.guild, embed)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Не вдалося замутити: {e}", ephemeral=True)
+            await interaction.response.send_message(f"Не вдалося замутити: {e}", ephemeral=True)
 
     @app_commands.command(name="unmute", description="[МОД] Зняти тайм-аут з користувача")
     @app_commands.default_permissions(moderate_members=True)
@@ -149,14 +149,14 @@ class ModCog(commands.Cog):
             embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
             await self.send_log(interaction.guild, embed)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
+            await interaction.response.send_message(f"Помилка: {e}", ephemeral=True)
 
     @app_commands.command(name="kick", description="[АДМІН] Вигнати користувача з сервера")
     @app_commands.default_permissions(kick_members=True)
     @app_commands.guild_only()
     async def kick(self, interaction: discord.Interaction, member: discord.Member, reason: str = "Причина не вказана"):
         if member.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
-            return await interaction.response.send_message("❌ Ви не можете вигнати цього користувача.", ephemeral=True)
+            return await interaction.response.send_message("Ви не можете вигнати цього користувача.", ephemeral=True)
 
         try:
             await member.send(f"Вас було вигнано з сервера **{interaction.guild.name}**. Причина: {reason}")
@@ -165,22 +165,22 @@ class ModCog(commands.Cog):
 
         try:
             await member.kick(reason=reason)
-            await interaction.response.send_message(f"👢 Користувача {member.mention} вигнано. Причина: {reason}")
+            await interaction.response.send_message(f"Користувача {member.mention} вигнано. Причина: {reason}")
             
-            embed = discord.Embed(title="👢 Вигнання (Кік)", color=0xe74c3c)
+            embed = discord.Embed(title="Вигнання (Кік)", color=0xe74c3c)
             embed.add_field(name="Користувач", value=f"{member.name} ({member.id})", inline=True)
             embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
             embed.add_field(name="Причина", value=reason, inline=False)
             await self.send_log(interaction.guild, embed)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
+            await interaction.response.send_message(f"Помилка: {e}", ephemeral=True)
 
     @app_commands.command(name="ban", description="[АДМІН] Заблокувати користувача")
     @app_commands.default_permissions(ban_members=True)
     @app_commands.guild_only()
     async def ban(self, interaction: discord.Interaction, member: discord.Member, reason: str = "Причина не вказана"):
         if member.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
-            return await interaction.response.send_message("❌ Ви не можете забанити цього користувача.", ephemeral=True)
+            return await interaction.response.send_message("Ви не можете забанити цього користувача.", ephemeral=True)
 
         try:
             await member.send(f"Вас було ЗАБАНЕНО на сервері **{interaction.guild.name}**. Причина: {reason}")
@@ -196,7 +196,7 @@ class ModCog(commands.Cog):
             embed.add_field(name="Причина", value=reason, inline=False)
             await self.send_log(interaction.guild, embed)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {e}", ephemeral=True)
+            await interaction.response.send_message(f"Помилка: {e}", ephemeral=True)
 
     # ==========================================
     # СИСТЕМА ПОПЕРЕДЖЕНЬ (ВАРНІВ)
@@ -206,7 +206,7 @@ class ModCog(commands.Cog):
     @app_commands.default_permissions(manage_messages=True)
     @app_commands.guild_only()
     async def warn(self, interaction: discord.Interaction, member: discord.Member, reason: str):
-        if member.bot: return await interaction.response.send_message("❌ Не можна попередити бота.", ephemeral=True)
+        if member.bot: return await interaction.response.send_message("Не можна попередити бота.", ephemeral=True)
         
         guild_id = interaction.guild.id
         config = self.get_config(guild_id)
@@ -268,12 +268,12 @@ class ModCog(commands.Cog):
         if uid in config["warnings"]:
             del config["warnings"][uid]
             save_guild_json(guild_id, MOD_CONFIG, config)
-            await interaction.response.send_message(f"✅ Всі попередження з {member.mention} було знято.", ephemeral=True)
+            await interaction.response.send_message(f"Всі попередження з {member.mention} було знято.", ephemeral=True)
             
             embed = discord.Embed(title="Амністія", description=f"Всі попередження користувача {member.mention} очищено модератором {interaction.user.mention}.", color=0x2ecc71)
             await self.send_log(interaction.guild, embed)
         else:
-            await interaction.response.send_message("❌ У цього користувача немає попереджень.", ephemeral=True)
+            await interaction.response.send_message("У цього користувача немає попереджень.", ephemeral=True)
 
     # ==========================================
     # УПРАВЛІННЯ КАНАЛАМИ
