@@ -182,6 +182,41 @@ class ProfileCog(commands.Cog):
 
         self.bot.loop.create_task(self._background_sync(guild, target_channel))
 
+    @commands.command(name="sync_msgs", description="[Власник] Глибоке сканування історії повідомлень")
+    @commands.guild_only()
+    async def sync_msgs(self, ctx):
+        if ctx.author.id != ctx.guild.owner_id:
+            return await ctx.send("❌ Ця команда доступна лише власнику сервера.")
+
+        await ctx.send("🔄 Починаю глибоке сканування всіх каналів. Це може зайняти від кількох хвилин до години. Я напишу, коли закінчу!")
+        
+        guild_id = ctx.guild.id
+        data = load_guild_json(guild_id, DATA_FILE)
+        
+        user_counts = {}
+        total_scanned = 0
+        
+        for channel in ctx.guild.text_channels:
+            try:
+                async for message in channel.history(limit=None):
+                    if not message.author.bot: # Ботів не рахуємо
+                        uid = str(message.author.id)
+                        user_counts[uid] = user_counts.get(uid, 0) + 1
+                    total_scanned += 1
+            except discord.Forbidden:
+                continue 
+            except Exception as e:
+                print(f"Помилка при читанні каналу {channel.name}: {e}")
+
+        for uid, count in user_counts.items():
+            if uid not in data:
+                data[uid] = self.get_user_data(data, uid)
+            data[uid]["messages"] = count 
+
+        save_guild_json(guild_id, DATA_FILE, data)
+        
+        await ctx.send(f"✅ **Глибоке сканування завершено!**\nПроаналізовано повідомлень: `{total_scanned}`.\nБаза даних оновлена, тепер профілі показують всю історію від початку створення сервера!")
+
     async def _background_sync(self, guild: discord.Guild, notify_channel: discord.TextChannel = None):
         """Фонова функція для сканування історії"""
         data = load_guild_json(guild.id, DATA_FILE)
