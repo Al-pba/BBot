@@ -369,6 +369,8 @@ class CasinoCog(commands.Cog):
     @app_commands.command(name="slots", description="Ігрові автомати (3 в ряд)")
     @app_commands.guild_only()
     async def slots(self, interaction: discord.Interaction, bet: int):
+        await interaction.response.defer()
+
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
         conf = get_casino_config(guild_id)
@@ -376,57 +378,79 @@ class CasinoCog(commands.Cog):
         user = data.get(uid, {})
 
         if not process_bet(user, conf, bet):
-            return await interaction.response.send_message("Некоректна ставка або недостатньо фішок (або перевищено ліміт).", ephemeral=True)
+            return await interaction.followup.send("❌ Некоректна ставка або недостатньо фішок (або перевищено ліміт).", ephemeral=True)
 
         conf["bank"] += bet
         save_guild_json(guild_id, DATA_FILE, data)
         
-        await interaction.response.defer()
-
         emojis = ["🍒", "🍋", "🔔", "🍉", "⭐", "💎"]
         
-        msg = await interaction.followup.send("`[ ? | ? | ? ]` Крутимо...", wait=True)
-        await asyncio.sleep(1)
-        await msg.edit(content=f"`[ {random.choice(emojis)} | ? | ? ]` Крутимо...")
-        await asyncio.sleep(1)
-        
-        # === ПІДТАСОВКА КАЗИНО (RTP ~ 85%) ===
         roll = random.randint(1, 1000)
         
         if roll <= 600:
-            res = random.sample(emojis, 3)
+            if random.random() < 0.3:
+                a = random.choice(emojis)
+                b = random.choice([e for e in emojis if e != a])
+                res = [a, a, b]
+            else:
+                res = random.sample(emojis, 3)
             mult = 0
+            
         elif roll <= 800:
             a = random.choice(emojis)
             b = random.choice([e for e in emojis if e != a])
             res = [a, a, b]
             random.shuffle(res)
             mult = 0.5
+            
         elif roll <= 930:
             a = random.choice(["🍒", "🍋", "🔔", "🍉"])
             res = [a, a, a]
             mult = 2
+            
         elif roll <= 990:
             res = ["⭐", "⭐", "⭐"]
             mult = 5
+            
         else:
             res = ["💎", "💎", "💎"]
             mult = 20
 
         if mult > 0 and (bet * mult) > conf["bank"]:
-            res = random.sample(emojis, 3)
+            a = res[0]
+            b = random.choice([e for e in emojis if e != a])
+            res = [a, a, b]
             mult = 0
 
         payout = int(bet * mult)
+        spin_emoji = "🌀"
         
+        msg = await interaction.followup.send(f"🎰 `[ {spin_emoji} | {spin_emoji} | {spin_emoji} ]` Запуск барабанів...", wait=True)
+        await asyncio.sleep(1.0)
+        
+        await msg.edit(content=f"🎰 `[ {res[0]} | {spin_emoji} | {spin_emoji} ]` ...")
+        await asyncio.sleep(1.0)
+
+        delay_3 = 1.8 if res[0] == res[1] else 1.0
+        await msg.edit(content=f"🎰 `[ {res[0]} | {res[1]} | {spin_emoji} ]` ...")
+        await asyncio.sleep(delay_3)
+
         final_str = f"🎰 `[ {res[0]} | {res[1]} | {res[2]} ]`\n\n"
         
         if payout > 0:
             user["chips"] += payout
             conf["bank"] -= payout
-            embed = discord.Embed(title="JACKPOT!" if mult >= 5 else "ВИГРАШ!", description=final_str + f"Ви виграли `{payout}` фішок! (Множник: {mult}x)", color=0x2ecc71)
+            
+            if mult >= 5:
+                color = 0xf1c40f
+                title = "🏆 МЕГА ДЖЕКПОТ!"
+            else:
+                color = 0x2ecc71
+                title = "🎉 ВИГРАШ!"
+                
+            embed = discord.Embed(title=title, description=final_str + f"Ви виграли `{payout}` фішок! (Множник: **{mult}x**)", color=color)
         else:
-            embed = discord.Embed(title="ПРОГРАШ", description=final_str + f"Ваша ставка `{bet}` фішок згоріла.", color=0xe74c3c)
+            embed = discord.Embed(title="💀 ПРОГРАШ", description=final_str + f"Ваша ставка `{bet}` фішок згоріла.", color=0xe74c3c)
 
         embed.set_footer(text=f"Ваші фішки: {user['chips']}")
         

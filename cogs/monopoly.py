@@ -1676,17 +1676,17 @@ class MonopolyCog(commands.Cog):
         if prop_id:
             prop = mono_data["companies"][owner_id]["properties"].get(prop_id)
             if not prop:
-                return await interaction.response.send_message("❌ Майно з таким ID не знайдено.", ephemeral=True)
+                return await interaction.response.send_message("Майно з таким ID не знайдено.", ephemeral=True)
             old_name = prop["name"]
             prop["name"] = new_name
             save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
-            await interaction.response.send_message(f"✅ Майно гравця {owner.mention} перейменовано з **{old_name}** на **{new_name}**.", ephemeral=True)
+            await interaction.response.send_message(f"Майно гравця {owner.mention} перейменовано з **{old_name}** на **{new_name}**.", ephemeral=True)
         else:
             comp = mono_data["companies"][owner_id]
             old_name = comp["name"]
             comp["name"] = new_name
             save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
-            await interaction.response.send_message(f"✅ Компанію гравця {owner.mention} перейменовано з **{old_name}** на **{new_name}**.", ephemeral=True)
+            await interaction.response.send_message(f"Компанію гравця {owner.mention} перейменовано з **{old_name}** на **{new_name}**.", ephemeral=True)
 
 
     @app_commands.command(name="admin_delete_company", description="[АДМІН] Примусово видалити чужу компанію")
@@ -1698,11 +1698,27 @@ class MonopolyCog(commands.Cog):
         owner_id = str(owner.id)
         
         if owner_id not in mono_data["companies"]:
-            return await interaction.response.send_message("❌ У цього гравця немає компанії.", ephemeral=True)
+            return await interaction.response.send_message("У цього гравця немає компанії.", ephemeral=True)
             
         comp_name = mono_data["companies"][owner_id]["name"]
         await delete_company_data(guild, owner_id, mono_data)
-        await interaction.response.send_message(f"✅ Компанію **{comp_name}** гравця {owner.mention} та всі її зв'язки успішно видалено.", ephemeral=True)
+        await interaction.response.send_message(f"Компанію **{comp_name}** гравця {owner.mention} та всі її зв'язки успішно видалено.", ephemeral=True)
+
+    @app_commands.command(name="admin_set_company_channel", description="[АДМІН] Призначити новий канал для компанії")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.guild_only()
+    async def admin_set_company_channel(self, interaction: discord.Interaction, owner: discord.User, channel: discord.TextChannel):
+        guild_id = interaction.guild.id
+        mono_data = get_monopoly_data(guild_id)
+        owner_id = str(owner.id)
+        
+        if owner_id not in mono_data["companies"]:
+            return await interaction.response.send_message("У цього гравця немає компанії.", ephemeral=True)
+            
+        mono_data["companies"][owner_id]["channel_id"] = channel.id
+        save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
+        
+        await interaction.response.send_message(f"Канал корпоративного зв'язку для компанії **{mono_data['companies'][owner_id]['name']}** успішно змінено на {channel.mention}.", ephemeral=True)
 
     @app_commands.command(name="admin_transfer_property", description="[АДМІН] Примусово передати майно від одного гравця іншому")
     @app_commands.default_permissions(administrator=True)
@@ -1744,7 +1760,7 @@ class MonopolyCog(commands.Cog):
         mono_data["companies"][target_id]["properties"][prop_id] = prop
         
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
-        await interaction.response.send_message(f"✅Майно **{prop['name']}** примусово передано компанії гравця {target_owner.mention}.", ephemeral=True)
+        await interaction.response.send_message(f"Майно **{prop['name']}** примусово передано компанії гравця {target_owner.mention}.", ephemeral=True)
 
 
 async def setup(bot):

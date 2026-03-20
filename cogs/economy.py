@@ -470,7 +470,8 @@ class EconomyCog(commands.Cog):
         for uid, udata in data.items():
             member = interaction.guild.get_member(int(uid))
             if member:
-                total_wealth = udata.get("balance", 0) + udata.get("bank", 0)
+                bank_amount = 0 if udata.get("bank_hidden", False) else udata.get("bank", 0)
+                total_wealth = udata.get("balance", 0) + bank_amount
                 active_users.append((member, total_wealth))
 
         sorted_users = sorted(active_users, key=lambda x: x[1], reverse=True)[:10]

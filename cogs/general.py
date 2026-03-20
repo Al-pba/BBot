@@ -2,6 +2,15 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import platform
+import os
+
+DEVELOPER_IDS = [123456789012345678, 987654321098765432] 
+
+def is_dev():
+    """Кастомний декоратор, який замінює is_owner()"""
+    def predicate(ctx):
+        return ctx.author.id in DEVELOPER_IDS
+    return commands.check(predicate)
 
 class General(commands.Cog):
     def __init__(self, bot):
@@ -79,29 +88,55 @@ class General(commands.Cog):
         embed = discord.Embed(title=f"Аватар {member.display_name}", color=0xFDFD96)
         embed.set_image(url=member.display_avatar.url)
         
-      
         embed.description = f"[Завантажити оригінал]({member.display_avatar.url})"
-        
         await interaction.response.send_message(embed=embed)
 
+    # ==========================================
+    # АДМІНСЬКІ КОМАНДИ
+    # ==========================================
+
     @commands.command(name="sync")
-    @commands.is_owner()
+    @is_dev()
     async def sync(self, ctx):
         try:
             synced = await self.bot.tree.sync()
-            await ctx.send(f"Успішно синхронізовано {len(synced)} слеш-команд!")
+            await ctx.send(f"✅ Успішно синхронізовано {len(synced)} слеш-команд!")
         except Exception as e:
-            await ctx.send(f"Помилка: {e}")
+            await ctx.send(f"❌ Помилка: {e}")
 
     @commands.command(name="reload", hidden=True)
-    @commands.is_owner()
+    @is_dev()
     async def reload(self, ctx, extension: str):
         try:
             path = f"cogs.{extension}" if not extension.startswith("cogs.") else extension
             await self.bot.reload_extension(path)
-            await ctx.send(f"Модуль `{extension}` перезавантажено!")
+            await ctx.send(f"✅ Модуль `{extension}` перезавантажено!")
         except Exception as e:
-            await ctx.send(f"Помилка: ```python\n{e}\n```")
+            await ctx.send(f"❌ Помилка: ```python\n{e}\n```")
+
+    @commands.command(name="reloadall", hidden=True)
+    @is_dev()
+    async def reloadall(self, ctx):
+        success_count = 0
+        failed = []
+
+        for filename in os.listdir('./cogs'):
+            if filename.endswith('.py'):
+                ext = f"cogs.{filename[:-3]}"
+                try:
+                    if ext in self.bot.extensions:
+                        await self.bot.reload_extension(ext)
+                    else:
+                        await self.bot.load_extension(ext)
+                    success_count += 1
+                except Exception as e:
+                    failed.append(f"`{ext}`: {e}")
+
+        msg = f"✅ Успішно оновлено **{success_count}** модулів!"
+        if failed:
+            msg += "\n❌ **Помилки при завантаженні:**\n" + "\n".join(failed)
+            
+        await ctx.send(msg)
 
 async def setup(bot):
     await bot.add_cog(General(bot))

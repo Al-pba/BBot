@@ -115,6 +115,14 @@ class MainProfileView(discord.ui.View):
         embed = self.cog.build_stats_embed(self.target_user, user_data)
         await interaction.response.edit_message(embed=embed, view=StatsProfileView(self.target_user, self.cog, self.author_id))
 
+    @discord.ui.button(emoji="👍", style=discord.ButtonStyle.success, row=0)
+    async def like_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_vote(interaction, "like")
+
+    @discord.ui.button(emoji="👎", style=discord.ButtonStyle.danger, row=0)
+    async def dislike_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_vote(interaction, "dislike")
+
     @discord.ui.button(label="Крипто", style=discord.ButtonStyle.secondary, row=1)
     async def crypto_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.check_author(interaction): return
@@ -130,13 +138,24 @@ class MainProfileView(discord.ui.View):
         
         await interaction.response.edit_message(embed=embed, view=InventoryProfileView(self.target_user, self.cog, self.author_id))
 
-    @discord.ui.button(emoji="👍", style=discord.ButtonStyle.success, row=0)
-    async def like_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_vote(interaction, "like")
+    # === НОВА КНОПКА: ПРИВАТНІСТЬ БАНКУ ===
+    @discord.ui.button(label="Приватність банку", style=discord.ButtonStyle.secondary, row=1, emoji="👁️")
+    async def privacy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.check_author(interaction): return
+        if interaction.user.id != self.target_user.id:
+            return await interaction.response.send_message("❌ Ви можете змінювати приватність лише у власному профілі!", ephemeral=True)
+            
+        guild_id = interaction.guild.id
+        data = load_guild_json(guild_id, DATA_FILE)
+        user_data = self.cog.get_user_data(data, self.target_user.id)
+        
+        current_status = user_data.get("bank_hidden", False)
+        user_data["bank_hidden"] = not current_status
+        save_guild_json(guild_id, DATA_FILE, data)
+        
+        state = "приховано (***)" if user_data["bank_hidden"] else "відкрито"
+        await interaction.response.send_message(f"🏦 Ваш банківський рахунок тепер **{state}** для інших.", ephemeral=True)
 
-    @discord.ui.button(emoji="👎", style=discord.ButtonStyle.danger, row=0)
-    async def dislike_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_vote(interaction, "dislike")
 
 # ==========================================
 # COG КЛАС
@@ -145,6 +164,54 @@ class MainProfileView(discord.ui.View):
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        """Автоматично запускає сканування повідомлень при додаванні бота на новий сервер"""
+        
+        target_channel = guild.system_channel
+        if not target_channel or not target_channel.permissions_for(guild.me).send_messages:
+            for channel in guild.text_channels:
+                if channel.permissions_for(guild.me).send_messages:
+                    target_channel = channel
+                    break
+        
+        if target_channel:
+            await target_channel.send("👋 Привіт! Дякую за запрошення. \n🔄 Я автоматично розпочав фонове сканування історії повідомлень цього сервера, щоб налаштувати статистику гравців у профілях. Я повідомлю, коли закінчу!")
+
+        self.bot.loop.create_task(self._background_sync(guild, target_channel))
+
+    async def _background_sync(self, guild: discord.Guild, notify_channel: discord.TextChannel = None):
+        """Фонова функція для сканування історії"""
+        data = load_guild_json(guild.id, DATA_FILE)
+        user_counts = {}
+        total_scanned = 0
+        
+        for channel in guild.text_channels:
+            try:
+                async for message in channel.history(limit=None):
+                    if not message.author.bot:
+                        uid = str(message.author.id)
+                        user_counts[uid] = user_counts.get(uid, 0) + 1
+                    total_scanned += 1
+            except discord.Forbidden:
+                continue 
+            except Exception as e:
+                print(f"Помилка сканування {channel.name}: {e}")
+
+        for uid, count in user_counts.items():
+            if uid not in data:
+                data[uid] = self.get_user_data(data, uid)
+            data[uid]["messages"] = count 
+
+        save_guild_json(guild.id, DATA_FILE, data)
+        
+        if notify_channel:
+            try:
+                await notify_channel.send(f"✅ **Автоматичне налаштування завершено!**\nПроаналізовано повідомлень: `{total_scanned}`. База даних профілів повністю готова до роботи.")
+            except:
+                pass
 
     def get_user_data(self, data, user_id):
         uid = str(user_id)
@@ -158,6 +225,7 @@ class ProfileCog(commands.Cog):
         u.setdefault("dislikes", 0)
         u.setdefault("mod_mark", "Нейтральна")
         u.setdefault("bank", 0)
+        u.setdefault("bank_hidden", False) 
         u.setdefault("inventory", [])
         u.setdefault("crypto", {})
         u.setdefault("messages", 0)
@@ -175,7 +243,6 @@ class ProfileCog(commands.Cog):
         return u
 
     def build_main_embed(self, user: discord.User, member: discord.User, user_data: dict) -> discord.Embed:
-        """Універсальний ембед: працює і для тих, хто на сервері, і для тих, кого немає."""
         last_seen = f"<t:{user_data['last_seen']}:R>" if user_data["last_seen"] > 0 else "Ніколи"
         
         embed = discord.Embed(title=f"👤 Профіль: {user.name}", color=0x2b2d31)
@@ -226,7 +293,12 @@ class ProfileCog(commands.Cog):
             item = templates.get(i_id, {"name": i_id, "rarity": "❓"})
             inv_list.append(f"{item.get('rarity', '')} {item.get('name')} x{count}")
 
-        embed.add_field(name="🏦 Банк", value=f"`{user_data.get('bank', 0)} AC`", inline=False)
+        if user_data.get("bank_hidden", False):
+            bank_display = "*** AC"
+        else:
+            bank_display = f"{user_data.get('bank', 0)} AC"
+
+        embed.add_field(name="🏦 Банк", value=f"`{bank_display}`", inline=False)
         embed.add_field(name="🎒 Вміст рюкзака", value="\n".join(inv_list) if inv_list else "Порожньо", inline=True)
         
         return embed

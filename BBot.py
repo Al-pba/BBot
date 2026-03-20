@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from collections import deque 
 import traceback
 
+from cogs.general import DEVELOPER_IDS
+
 # --- ІНТЕРФЕЙС КЛАСИ ДЛЯ HELP ---
 
 class HelpDropdown(discord.ui.Select):
@@ -161,10 +163,11 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=main_embed, view=HelpView(bot, categories, interaction.user.id))
 
 @bot.tree.command(name="logs", description="[Власник] Переглянути останні події")
+@app_commands.guild_only() 
 async def logs(interaction: discord.Interaction):
     """Команда для перегляду логів у гарному форматі"""
-    if not await bot.is_owner(interaction.user):
-        return await interaction.response.send_message("❌ Ця команда доступна лише розробнику.", ephemeral=True)
+    if interaction.user.id != interaction.guild.owner_id: 
+        return await interaction.response.send_message("Ця команда доступна лише власнику сервера.", ephemeral=True)
 
     if not bot.logs_buffer:
         return await interaction.response.send_message("Журнал подій поки порожній.", ephemeral=True)
@@ -172,11 +175,11 @@ async def logs(interaction: discord.Interaction):
     log_content = "\n".join(bot.logs_buffer)
     
     embed = discord.Embed(
-        title="📜 Журнал останніх подій",
+        title="Журнал останніх подій",
         description=log_content,
         color=0xFFCFD2 
     )
-    embed.set_footer(text=f"Всього записів: {len(bot.logs_buffer)}")
+    embed.set_footer(text=f"Всього записів у буфері: {len(bot.logs_buffer)}")
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 

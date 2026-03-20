@@ -5,6 +5,7 @@ import time
 import random
 import os
 from datetime import time as dt_time, timezone, timedelta
+from cogs.monopoly import get_monopoly_data
 from utils import load_guild_json, save_guild_json
 
 DATA_FILE = "users.json"
@@ -353,6 +354,7 @@ class JobNavView(discord.ui.View):
 # ОСНОВНИЙ КОГ: РОБОТА ТА ПРАЦЕВЛАШТУВАННЯ
 # ==========================================
 
+
 class WorkCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -424,8 +426,12 @@ class WorkCog(commands.Cog):
         salary = prop.get("salaries", {}).get(prof, 100)
         stats = user_data["stats"]
 
+        comp_channel = None
+        if comp.get("channel_id"):
+            comp_channel = interaction.guild.get_channel(comp["channel_id"])
+
         # ==========================================
-        # 1. РОБІТНИК (Завод, Ферма, Офіс) - МИТТЄВА РОБОТА
+        # 1. РОБІТНИК (Завод, Ферма, Офіс)
         # ==========================================
         if prof == "робітник" and prop["type"] in ["завод", "ферма", "офіс"]:
             main_stat = stats.get("intelligence", 1) if prop["type"] == "офіс" else stats.get("strength", 1)
@@ -434,7 +440,6 @@ class WorkCog(commands.Cog):
             res_type = "materials" if prop["type"] == "завод" else "crops" if prop["type"] == "ферма" else "data"
             total_salary = salary * attempts 
 
-            # === ОПЛАТА ЗАРПЛАТИ ===
             if comp_owner == "STATE_COMPANY":
                 config = load_guild_json(guild_id, ECONOMY_CONFIG)
                 if config.get("server_bank", 0) < total_salary:
@@ -447,7 +452,6 @@ class WorkCog(commands.Cog):
                     return await interaction.response.send_message(f"У роботодавця немає стільки грошей на ЗП ({total_salary} AC).", ephemeral=True)
                 owner_data["balance"] -= total_salary
 
-            # === РОЗРАХУНОК УСПІХУ ТА БАФІВ ===
             buffs = prop.get("buffs", {})
             success_bonus = 0
             extra_yield = 0
@@ -458,18 +462,13 @@ class WorkCog(commands.Cog):
             base_success_chance = calc_success_chance(main_stat)
             final_success_chance = min(1.0, base_success_chance + success_bonus)
 
-            defects = 0
-            successes = 0
-            
+            defects, successes = 0, 0
             for _ in range(attempts):
-                if random.random() < final_success_chance:
-                    successes += 1
-                else:
-                    defects += 1
+                if random.random() < final_success_chance: successes += 1
+                else: defects += 1
 
             total_produced = successes * (1 + extra_yield)
 
-            # === ЗБЕРЕЖЕННЯ РЕЗУЛЬТАТІВ ===
             if "storage" not in prop: prop["storage"] = {}
             prop["storage"][res_type] = prop["storage"].get(res_type, 0) + total_produced
             
@@ -483,22 +482,18 @@ class WorkCog(commands.Cog):
             save_guild_json(guild_id, DATA_FILE, data)
             save_guild_json(guild_id, MONOPOLY_FILE, mono)
 
-            res_names_ua = {
-                "materials": "деталей (матеріалів)",
-                "crops": "одиниць врожаю",
-                "data": "пакетів даних"
-            }
+            res_names_ua = {"materials": "деталей (матеріалів)", "crops": "одиниць врожаю", "data": "пакетів даних"}
             res_display = res_names_ua.get(res_type, res_type)
+
+            if comp_channel:
+                await comp_channel.send(f"👷 **{interaction.user.display_name}** відпрацював зміну на **{prop['name']}**.\n💵 ЗП: `{total_salary} AC` | 📦 Виготовлено: `{total_produced}` {res_display}.")
 
             embed = discord.Embed(title=f"🏭 Зміна завершена: {prop['name']}", color=0x2ecc71)
             embed.add_field(name="💰 Зароблено", value=f"`{total_salary} AC`", inline=True)
             embed.add_field(name="📦 Виготовлено", value=f"`{total_produced}` {res_display}", inline=True)
             embed.add_field(name="⚠️ Браковано", value=f"`{defects}` шт.", inline=True)
-            
-            unlock_time = int(time.time()) + cd
             embed.set_footer(text=f"Статистика: {successes} успішних виготовлень із {attempts} спроб.")
-            embed.description = f"⏳ Наступна зміна буде доступна <t:{unlock_time}:R>"
-
+            embed.description = f"⏳ Наступна зміна буде доступна <t:{int(time.time()) + cd}:R>"
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # ==========================================
@@ -506,23 +501,19 @@ class WorkCog(commands.Cog):
         # ==========================================
         elif prof == "робітник" and prop["type"] == "сервер":
             connected_to_id = prop.get("connected_to")
-            if not connected_to_id:
-                return await interaction.response.send_message("Цей сервер не підключений до жодного офісу!", ephemeral=True)
+            if not connected_to_id: return await interaction.response.send_message("Цей сервер не підключений до жодного офісу!", ephemeral=True)
             
             target_office = comp["properties"].get(connected_to_id)
-            if not target_office or target_office["type"] != "офіс":
-                return await interaction.response.send_message("Сервер має бути підключений до офісу!", ephemeral=True)
+            if not target_office or target_office["type"] != "офіс": return await interaction.response.send_message("Сервер має бути підключений до офісу!", ephemeral=True)
 
             if comp_owner == "STATE_COMPANY":
                 config = load_guild_json(guild_id, ECONOMY_CONFIG)
-                if config.get("server_bank", 0) < salary:
-                    return await interaction.response.send_message("У Державній Казні немає грошей на вашу ЗП.", ephemeral=True)
+                if config.get("server_bank", 0) < salary: return await interaction.response.send_message("У Державній Казні немає грошей на вашу ЗП.", ephemeral=True)
                 config["server_bank"] -= salary
                 save_guild_json(guild_id, ECONOMY_CONFIG, config)
             else:
                 owner_data = data.get(comp_owner, {})
-                if owner_data.get("balance", 0) < salary:
-                    return await interaction.response.send_message("У боса немає грошей на вашу ЗП.", ephemeral=True)
+                if owner_data.get("balance", 0) < salary: return await interaction.response.send_message("У боса немає грошей на вашу ЗП.", ephemeral=True)
                 owner_data["balance"] -= salary
             
             user_data["balance"] += salary
@@ -541,8 +532,10 @@ class WorkCog(commands.Cog):
             save_guild_json(guild_id, DATA_FILE, data)
             save_guild_json(guild_id, MONOPOLY_FILE, mono)
             
-            unlock_time = int(time.time()) + cd
-            return await interaction.response.send_message(f"💻 Ви оптимізували сервери! Згенеровано `{bonus_data}` додаткових даних для офісу.\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{unlock_time}:R>", ephemeral=True)
+            if comp_channel:
+                await comp_channel.send(f"💻 **{interaction.user.display_name}** оптимізував сервери для **{target_office['name']}**.\n💵 ЗП: `{salary} AC` | 📊 Бонус даних: `{bonus_data}`.")
+
+            return await interaction.response.send_message(f"💻 Ви оптимізували сервери! Згенеровано `{bonus_data}` додаткових даних для офісу.\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{int(time.time()) + cd}:R>", ephemeral=True)
 
         # ==========================================
         # 3 & 4. МЕНЕДЖЕР ТА АГРОНОМ
@@ -579,8 +572,11 @@ class WorkCog(commands.Cog):
             save_guild_json(guild_id, MONOPOLY_FILE, mono)
             
             hours = round(duration_secs / 3600, 1)
-            unlock_time = int(time.time()) + cd
-            return await interaction.response.send_message(f"📈 Баф накладено на {hours} год!\nШанс успіху робітників: `+{int(success_bonus*100)}%`, Бонус видобутку: `+{extra_yield}`.\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{unlock_time}:R>", ephemeral=True)
+            
+            if comp_channel:
+                await comp_channel.send(f"📈 **{interaction.user.display_name}** провів мотивуючий тренінг на **{prop['name']}** (Баф на {hours} год).\n💵 ЗП: `{salary} AC`.")
+
+            return await interaction.response.send_message(f"📈 Баф накладено на {hours} год!\nШанс успіху робітників: `+{int(success_bonus*100)}%`, Бонус видобутку: `+{extra_yield}`.\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{int(time.time()) + cd}:R>", ephemeral=True)
 
         # ==========================================
         # 5. ЛОГІСТ (Склад)
@@ -622,8 +618,10 @@ class WorkCog(commands.Cog):
             res_str = ", ".join([f"{k}: {v}" for k, v in transferred_totals.items() if v > 0])
             if not res_str: res_str = "Нічого переносити."
             
-            unlock_time = int(time.time()) + cd
-            return await interaction.response.send_message(f"🚛 Перенесено {int(transfer_pct*100)}%.\nПрибуло: {res_str}\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{unlock_time}:R>", ephemeral=True)
+            if comp_channel:
+                await comp_channel.send(f"🚛 Логіст **{interaction.user.display_name}** завершив перевезення на **{prop['name']}**.\n💵 ЗП: `{salary} AC` | 📦 Прибуло: {res_str}.")
+
+            return await interaction.response.send_message(f"🚛 Перенесено {int(transfer_pct*100)}%.\nПрибуло: {res_str}\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{int(time.time()) + cd}:R>", ephemeral=True)
 
         # ==========================================
         # 6. ОХОРОНЕЦЬ (Склад)
@@ -653,8 +651,11 @@ class WorkCog(commands.Cog):
             save_guild_json(guild_id, MONOPOLY_FILE, mono)
             
             hours = round(duration_secs / 3600, 1)
-            unlock_time = int(time.time()) + cd
-            return await interaction.response.send_message(f"🛡️ Склад під захистом на {hours} год!\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{unlock_time}:R>", ephemeral=True)
+            
+            if comp_channel:
+                await comp_channel.send(f"🛡️ Охоронець **{interaction.user.display_name}** заступив на зміну на **{prop['name']}** (Захист на {hours} год).\n💵 ЗП: `{salary} AC`.")
+
+            return await interaction.response.send_message(f"🛡️ Склад під захистом на {hours} год!\nЗарплата: `{salary} AC`.\n⏳ Наступна зміна <t:{int(time.time()) + cd}:R>", ephemeral=True)
 
         else:
             return await interaction.response.send_message("Невідома комбінація професії та нерухомості.", ephemeral=True)
@@ -666,35 +667,25 @@ class WorkCog(commands.Cog):
         mono_data = load_guild_json(guild_id, MONOPOLY_FILE)
         
         vacancies_tree = {}
-        
         for owner_id, comp in mono_data.get("companies", {}).items():
             for prop_id, prop in comp.get("properties", {}).items():
-                if prop["type"] == "склад" or prop["durability"] == 0: 
-                    continue
-                    
+                if prop["type"] == "склад" or prop["durability"] == 0: continue
                 current_workers = len(prop.get("workers", {}))
                 max_workers = prop.get("level", 1)
                 
                 if current_workers < max_workers:
                     salaries = prop.get("salaries", {})
                     available_profs = list(salaries.keys())
-                    
                     if available_profs:
-                        if owner_id not in vacancies_tree:
-                            vacancies_tree[owner_id] = {}
+                        if owner_id not in vacancies_tree: vacancies_tree[owner_id] = {}
                         vacancies_tree[owner_id][prop_id] = available_profs
 
         if not vacancies_tree:
             return await interaction.response.send_message("📉 Наразі на сервері немає жодної відкритої вакансії. Зайдіть пізніше!", ephemeral=True)
 
-        embed = discord.Embed(
-            title="📋 Біржа Праці",
-            description=f"Знайдено компаній з відкритими вакансіями: **{len(vacancies_tree)}**\n*Оберіть компанію зі списку нижче, щоб розпочати.*",
-            color=0x3498db
-        )
-        
+        embed = discord.Embed(title="📋 Біржа Праці", description=f"Знайдено компаній з відкритими вакансіями: **{len(vacancies_tree)}**\n*Оберіть компанію зі списку нижче, щоб розпочати.*", color=0x3498db)
         await interaction.response.send_message(embed=embed, view=JobNavView(self, vacancies_tree, mono_data), ephemeral=True)
- 
+
     @app_commands.command(name="job_leave", description="Звільнитися з поточної роботи")
     @app_commands.guild_only()
     async def job_leave(self, interaction: discord.Interaction):
@@ -703,12 +694,10 @@ class WorkCog(commands.Cog):
         
         data = load_guild_json(guild_id, DATA_FILE)
         mono_data = load_guild_json(guild_id, MONOPOLY_FILE)
-        
         user_data = self.get_user(data, user_id)
         job_info = user_data.get("job", {})
         
-        if not job_info:
-            return await interaction.response.send_message("Ви ніде не працюєте.", ephemeral=True)
+        if not job_info: return await interaction.response.send_message("Ви ніде не працюєте.", ephemeral=True)
             
         comp_id = job_info.get("company_id")
         prop_id = job_info.get("prop_id")
@@ -726,11 +715,98 @@ class WorkCog(commands.Cog):
                 await channel.send(f"🚪 Працівник {interaction.user.mention} звільнився за власним бажанням.")
 
         user_data["job"] = {}
-        
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         
         await interaction.response.send_message("Ви успішно звільнилися. Тепер ви можете шукати нову роботу!", ephemeral=True)
+
+    # ==========================================
+    # КОМАНДИ УПРАВЛІННЯ ПЕРСОНАЛОМ
+    # ==========================================
+
+    @app_commands.command(name="company_workers", description="Список працівників вашої компанії")
+    @app_commands.guild_only()
+    async def company_workers(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        user_id = str(interaction.user.id)
+        mono_data = get_monopoly_data(guild_id)
+        
+        if user_id not in mono_data["companies"]:
+            return await interaction.response.send_message("У вас немає власної компанії.", ephemeral=True)
+            
+        comp = mono_data["companies"][user_id]
+        embed = discord.Embed(title=f"👥 Штат працівників: {comp['name']}", color=0x3498db)
+        
+        has_workers = False
+        for prop_id, prop in comp["properties"].items():
+            workers = prop.get("workers", {})
+            if workers:
+                has_workers = True
+                worker_lines = []
+                for w_id, prof in workers.items():
+                    salary = prop.get("salaries", {}).get(prof, 100)
+                    worker_lines.append(f"• <@{w_id}> — **{prof.capitalize()}** (`{salary} AC`)")
+                
+                embed.add_field(
+                    name=f"🏢 {prop['name']} ({prop['type'].capitalize()})",
+                    value="\n".join(worker_lines),
+                    inline=False
+                )
+                
+        if not has_workers:
+            embed.description = "У вашій компанії наразі немає жодного найманого працівника."
+            
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="fire", description="Звільнити працівника з вашої компанії")
+    @app_commands.describe(member="Кого звільняємо?", reason="Причина звільнення")
+    @app_commands.guild_only()
+    async def fire(self, interaction: discord.Interaction, member: discord.User, reason: str = "Рішення керівництва"):
+        guild_id = interaction.guild.id
+        owner_id = str(interaction.user.id)
+        target_id = str(member.id)
+        
+        if owner_id == target_id:
+            return await interaction.response.send_message("Ви не можете звільнити самого себе.", ephemeral=True)
+            
+        mono_data = get_monopoly_data(guild_id)
+        users_data = load_guild_json(guild_id, DATA_FILE)
+        
+        if owner_id not in mono_data["companies"]:
+            return await interaction.response.send_message("У вас немає компанії.", ephemeral=True)
+            
+        comp = mono_data["companies"][owner_id]
+        target_prop = None
+        
+        for prop in comp["properties"].values():
+            if target_id in prop.get("workers", {}):
+                target_prop = prop
+                break
+                
+        if not target_prop:
+            return await interaction.response.send_message(f"Користувач {member.display_name} не працює у вашій компанії.", ephemeral=True)
+            
+        del target_prop["workers"][target_id]
+        
+        if target_id in users_data:
+            users_data[target_id]["job"] = {}
+            
+        save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
+        save_guild_json(guild_id, DATA_FILE, users_data)
+        
+        channel_id = comp.get("channel_id")
+        if channel_id:
+            comp_channel = interaction.guild.get_channel(channel_id)
+            if comp_channel:
+                await comp_channel.set_permissions(member, overwrite=None)
+                await comp_channel.send(f"Керівник звільнив працівника {member.mention}. Причина: {reason}")
+                
+        try:
+            await member.send(f"Вас було звільнено з компанії **{comp['name']}**.\n**Причина:** {reason}")
+        except:
+            pass
+            
+        await interaction.response.send_message(f"Працівника {member.mention} успішно звільнено.", ephemeral=True)
 
     @app_commands.command(name="admin_reset_cd", description="[АДМІН] Примусово скинути КД роботи гравцю")
     @app_commands.default_permissions(administrator=True)
@@ -749,6 +825,7 @@ class WorkCog(commands.Cog):
         
         save_guild_json(guild_id, DATA_FILE, data)
         await interaction.response.send_message(f"Ви успішно скинули КД для роботи гравцю {member.mention}. Він може працювати прямо зараз!", ephemeral=True)
+
 
 
 async def setup(bot):
