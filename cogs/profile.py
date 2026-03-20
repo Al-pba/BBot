@@ -154,7 +154,7 @@ class MainProfileView(discord.ui.View):
         save_guild_json(guild_id, DATA_FILE, data)
         
         state = "приховано (***)" if user_data["bank_hidden"] else "відкрито"
-        await interaction.response.send_message(f"🏦 Ваш банківський рахунок тепер **{state}** для інших.", ephemeral=True)
+        await interaction.response.send_message(f"🏦 Ваш банківський рахунок тепер {state} для інших.", ephemeral=True)
 
 
 # ==========================================
