@@ -219,7 +219,6 @@ class ProfileCog(commands.Cog):
 
     async def _background_sync(self, guild: discord.Guild, notify_channel: discord.TextChannel = None):
         """Фонова функція для сканування історії"""
-        data = load_guild_json(guild.id, DATA_FILE)
         user_counts = {}
         total_scanned = 0
         
@@ -235,6 +234,8 @@ class ProfileCog(commands.Cog):
             except Exception as e:
                 print(f"Помилка сканування {channel.name}: {e}")
 
+        data = load_guild_json(guild.id, DATA_FILE)
+        
         for uid, count in user_counts.items():
             if uid not in data:
                 data[uid] = self.get_user_data(data, uid)
@@ -244,7 +245,7 @@ class ProfileCog(commands.Cog):
         
         if notify_channel:
             try:
-                await notify_channel.send(f"✅ **Автоматичне налаштування завершено!**\nПроаналізовано повідомлень: `{total_scanned}`. База даних профілів повністю готова до роботи.")
+                await notify_channel.send(f"**Автоматичне налаштування завершено!**\nПроаналізовано повідомлень: `{total_scanned}`. База даних профілів повністю готова до роботи.")
             except:
                 pass
 
