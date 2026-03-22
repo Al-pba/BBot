@@ -70,6 +70,50 @@ class ItemsCog(commands.Cog):
         embed.description = "\n".join(lines)
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="item_info", description="Переглянути детальну інформацію про конкретний предмет")
+    @app_commands.guild_only()
+    async def item_info(self, interaction: discord.Interaction, item_id: str):
+        guild_id = interaction.guild.id
+        templates = load_guild_json(guild_id, ITEMS_TEMPLATES)
+        
+        processed_id = self.format_id(item_id)
+        
+        if processed_id not in templates:
+            return await interaction.response.send_message(
+                f"Предмет з ID `{processed_id}` не знайдено.", 
+                ephemeral=True
+            )
+
+        item = templates[processed_id]
+        
+        embed = discord.Embed(
+            title=f"{item.get('rarity', '⚪')} {item.get('name', 'Невідомо')}", 
+            color=0x3498db
+        )
+        embed.add_field(name="ID предмета", value=f"`{processed_id}`", inline=False)
+        
+        effects = []
+        if item.get("money"): 
+            effects.append(f"Отримання: **+{item['money']} AC**")
+        if item.get("xp"): 
+            effects.append(f"Отримання: **+{item['xp']} LVL**")
+        if item.get("stat_name") and item.get("stat_value"):
+            s_name = item["stat_name"].capitalize()
+            effects.append(f"Характеристика: **{s_name} +{item['stat_value']}**")
+        if item.get("role_id"):
+            role = interaction.guild.get_role(item["role_id"])
+            role_display = role.mention if role else "`Видалена роль`"
+            duration = item.get("role_duration", 0)
+            dur_text = f"на {duration} хв." if duration > 0 else "назавжди"
+            effects.append(f"Видає роль: {role_display} {dur_text}")
+            
+        if not effects:
+            effects.append("Декоративний предмет (не дає ефектів при використанні)")
+            
+        embed.add_field(name="Ефекти при використанні", value="\n".join(effects), inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="inventory", description="Переглянути свій рюкзак")
     @app_commands.guild_only()
     async def inventory(self, interaction: discord.Interaction):
