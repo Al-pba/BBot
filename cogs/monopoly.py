@@ -32,7 +32,7 @@ PROFESSIONS = {
     "завод": ["робітник", "менеджер"],
     "ферма": ["робітник", "агроном"],
     "офіс": ["робітник", "менеджер"],
-    "склад": ["логіст", "охоронець", "менеджер"],
+    "склад": ["логіст", "охоронець"],
     "сервер": ["робітник"]
 }
 
@@ -95,7 +95,7 @@ def get_monopoly_data(guild_id: int):
     # === ГЕНЕРАЦІЯ ДЕРЖАВНОГО ПІДПРИЄМСТВА ===
     if "STATE_COMPANY" not in data["companies"]:
         state_props = {
-            "state_warehouse": {"type": "склад", "name": "Державний Резерв", "level": 6, "durability": 100, "storage": {}, "connected_to": None, "hiring_mode": "open", "workers": {}, "salaries": {"логіст": 250, "охоронець": 300, "менеджер": 200}, "purchase_price": 50000},
+            "state_warehouse": {"type": "склад", "name": "Державний Резерв", "level": 6, "durability": 100, "storage": {}, "connected_to": None, "hiring_mode": "open", "workers": {}, "salaries": {"логіст": 250, "охоронець": 300}, "purchase_price": 50000},
             "state_factory": {"type": "завод", "name": "Державний Завод", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 150, "менеджер": 200}, "purchase_price": 50000},
             "state_farm": {"type": "ферма", "name": "Державні Угіддя", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 120, "агроном": 200}, "purchase_price": 45000},
             "state_office": {"type": "офіс", "name": "Державний Офіс", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 180, "менеджер": 250}, "purchase_price": 50000},
