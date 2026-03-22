@@ -923,29 +923,62 @@ class PropertyManageView(discord.ui.View):
 
     async def repair_btn(self, interaction: discord.Interaction):
         prop = self.mono_data["companies"][self.owner_id]["properties"][self.prop_id]
-        if prop["durability"] >= 100: return await interaction.response.send_message("Майно не потребує ремонту.", ephemeral=True)
+        if prop["durability"] >= 100: 
+            return await interaction.response.send_message("Майно не потребує ремонту.", ephemeral=True)
             
         cost = get_repair_cost(prop["durability"])
         resource_type = PASSIVE_INCOME[prop["type"]]["item"]
+        guild_id = interaction.guild.id
         
         if resource_type == "none":
             cost_ac = cost * 100
-            guild_id = interaction.guild.id
             users_data = load_guild_json(guild_id, DATA_FILE)
-            if users_data[self.owner_id].get("balance", 0) < cost_ac: return await interaction.response.send_message(f"Недостатньо коштів. Потрібно {cost_ac} AC.", ephemeral=True)
+            if users_data[self.owner_id].get("balance", 0) < cost_ac: 
+                return await interaction.response.send_message(f"Недостатньо коштів. Потрібно {cost_ac} AC.", ephemeral=True)
+                
             users_data[self.owner_id]["balance"] -= cost_ac
             save_guild_json(guild_id, DATA_FILE, users_data)
             
             config = load_guild_json(guild_id, ECONOMY_CONFIG)
             config["server_bank"] = config.get("server_bank", 0) + cost_ac
             save_guild_json(guild_id, ECONOMY_CONFIG, config)
+            
+            msg = f"Майно відремонтовано до 100% за `{cost_ac} AC`."
         else:
-            if prop["storage"].get(resource_type, 0) < cost: return await interaction.response.send_message(f"Недостатньо сировини. Потрібно {cost} одиниць {resource_type}.", ephemeral=True)
-            prop["storage"][resource_type] -= cost
+            if "storage" not in prop: prop["storage"] = {}
+            current_res = prop["storage"].get(resource_type, 0)
+            
+            if current_res >= cost:
+                prop["storage"][resource_type] -= cost
+                msg = f"Майно відремонтовано до 100% за `{cost}` одиниць `{resource_type}`."
+            else:
+                missing_res = cost - current_res
+                cost_ac = missing_res * 10
+                
+                users_data = load_guild_json(guild_id, DATA_FILE)
+                balance = users_data.get(self.owner_id, {}).get("balance", 0)
+                
+                if balance < cost_ac:
+                    return await interaction.response.send_message(
+                        f"Недостатньо ресурсів та коштів!\nПотрібно `{cost}` {resource_type} АБО доплатити `{cost_ac} AC` за нестачу.", 
+                        ephemeral=True
+                    )
+                
+                if current_res > 0:
+                    prop["storage"][resource_type] = 0
+                
+                users_data[self.owner_id]["balance"] -= cost_ac
+                save_guild_json(guild_id, DATA_FILE, users_data)
+                
+                config = load_guild_json(guild_id, ECONOMY_CONFIG)
+                config["server_bank"] = config.get("server_bank", 0) + cost_ac
+                save_guild_json(guild_id, ECONOMY_CONFIG, config)
+                
+                msg = f"Майно відремонтовано! Використано `{current_res}` {resource_type} та доплачено `{cost_ac} AC` з вашого гаманця."
 
         prop["durability"] = 100
-        save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
-        await interaction.response.send_message("Майно відремонтовано до 100%.", ephemeral=True)
+        save_guild_json(guild_id, MONOPOLY_FILE, self.mono_data)
+        await interaction.response.send_message(msg, ephemeral=True)
 
     async def upgrade_btn(self, interaction: discord.Interaction):
         prop = self.mono_data["companies"][self.owner_id]["properties"][self.prop_id]

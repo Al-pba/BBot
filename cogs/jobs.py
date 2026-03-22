@@ -669,7 +669,9 @@ class WorkCog(commands.Cog):
         vacancies_tree = {}
         for owner_id, comp in mono_data.get("companies", {}).items():
             for prop_id, prop in comp.get("properties", {}).items():
-                if prop["type"] == "склад" or prop["durability"] == 0: continue
+                
+                if prop["durability"] == 0: continue 
+                
                 current_workers = len(prop.get("workers", {}))
                 max_workers = prop.get("level", 1)
                 
