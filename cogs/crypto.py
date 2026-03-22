@@ -283,15 +283,21 @@ class CryptoCog(commands.Cog):
                     
                     current_volatility = base_volatility * (0.2 + 0.8 * heat)
                     
-                    stagnation_penalty = -0.0006 * heat
+                    drift = random.uniform(-0.001, 0.001) * max(1.0, heat)
                     
                     noise = random.uniform(-current_volatility, current_volatility)
                     
-                    total_multiplier = 1.0 + momentum + noise + stagnation_penalty
+                    total_multiplier = 1.0 + momentum + noise + drift
                     info["price"] = max(10, int(info["price"] * total_multiplier))
                     
                     info["market_heat"] = heat * 0.85 
-                    info["momentum"] *= 0.7 
+                    
+                    if random.random() < 0.25:
+                        info["momentum"] = -momentum * random.uniform(0.5, 1.2) + random.uniform(-0.015, 0.02)
+                    else:
+                        info["momentum"] *= 0.7 
+                    
+                    info["momentum"] = max(-0.25, min(info["momentum"], 0.25))
                     
                     info["volume_buy"] = 0
                     info["volume_sell"] = 0
