@@ -57,7 +57,7 @@ class ItemsCog(commands.Cog):
         templates = load_guild_json(guild_id, ITEMS_TEMPLATES)
         
         if not templates:
-            return await interaction.response.send_message("База предметів порожня.", ephemeral=True)
+            return await interaction.response.send_message("Дефіцит речей.", ephemeral=True)
 
         sorted_items = sorted(templates.items(), key=lambda x: self.get_item_sort_key(x[1]))
 
