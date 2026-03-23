@@ -4,6 +4,8 @@ from discord import app_commands
 import json, os, time, random, math, uuid
 from datetime import datetime
 from datetime import time as dt_time, timezone, timedelta
+
+from fontTools import diff
 from utils import load_guild_json, save_guild_json
 
 DATA_FILE = "users.json"
@@ -459,8 +461,9 @@ class RPGCog(commands.Cog):
         thief_agi = thief_data["stats"].get("agility", 1)
         victim_wis = victim_data["stats"].get("wisdom", 1)
         
-        chance = 40 + ((thief_agi - victim_wis) * 2)
-        chance = max(10, min(90, chance))
+        diff = thief_agi - victim_wis
+        chance = 50 + (diff * 1.5)
+        chance = max(25, min(85, chance))
         
         thief_data["steal_cooldown"] = int(time.time()) + 3600 
         
