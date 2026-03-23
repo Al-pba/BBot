@@ -10,7 +10,6 @@ from utils import load_guild_json, save_guild_json
 DATA_FILE = "users.json"
 EVENTS_CONFIG = "events_config.json"
 
-
 EVENT_CATEGORIES = {
     "economy": {
         "name": "Економіка та Гроші",
@@ -93,7 +92,6 @@ EVENT_CATEGORIES = {
         ]
     }
 }
-
 
 class EventTaskModal(discord.ui.Modal, title="Швидке завдання!"):
     def __init__(self, target_word: str, reward: int, view: discord.ui.View):
@@ -198,6 +196,12 @@ class EventAdminView(discord.ui.View):
         self.cog = cog
         self.guild_id = guild_id
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ У вас немає прав адміністратора для використання цих кнопок.", ephemeral=True)
+            return False
+        return True
+
     @discord.ui.button(label="Увімкнути/Вимкнути", style=discord.ButtonStyle.primary, row=0)
     async def toggle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         config = load_guild_json(self.guild_id, EVENTS_CONFIG)
@@ -264,22 +268,17 @@ class RandomEventsCog(commands.Cog):
         view.message = msg
 
         config["last_event_time"] = int(time.time())
-        config["events_today"] = config.get("events_today", 0) + 1
         save_guild_json(guild.id, EVENTS_CONFIG, config)
 
     @tasks.loop(minutes=5)
     async def events_loop(self):
-        """Цикл, який перевіряє ймовірності кожні 5 хвилин"""
+        """Цикл, який перевіряє ймовірності кожні 5 хвилин за динамічною кривою"""
         if not os.path.exists("server_data"): return
         
-        now = datetime.now()
         current_time = int(time.time())
-        today_str = now.strftime("%Y-%m-%d")
-
-        if (8 <= now.hour < 12) or (17 <= now.hour < 19):
-            spawn_chance = 0.15 
-        else:
-            spawn_chance = 0.03 
+        now = datetime.now()
+        
+        is_prime_time = (8 <= now.hour < 12) or (17 <= now.hour < 19)
 
         for gid_str in os.listdir("server_data"):
             try:
@@ -291,14 +290,15 @@ class RandomEventsCog(commands.Cog):
                 
                 if not config.get("is_enabled", False): continue
                 
-                if config.get("date") != today_str:
-                    config["date"] = today_str
-                    config["events_today"] = 0
-                
-                if config.get("events_today", 0) >= 3: continue
-                
                 last_time = config.get("last_event_time", 0)
-                if current_time - last_time < 14400: continue
+
+                hours_since_last = (current_time - last_time) / 3600.0 if last_time > 0 else 8.0
+
+                base_chance = ((hours_since_last / 8.0) ** 2) * 0.10
+                
+                spawn_chance = base_chance * 1.5 if is_prime_time else base_chance
+                
+                spawn_chance = min(0.50, spawn_chance)
                 
                 if random.random() < spawn_chance:
                     await self.trigger_event(guild)
@@ -312,6 +312,7 @@ class RandomEventsCog(commands.Cog):
 
     @app_commands.command(name="event_panel", description="[АДМІН] Панель керування випадковими подіями")
     @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True) 
     @app_commands.guild_only()
     async def event_panel(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -321,26 +322,26 @@ class RandomEventsCog(commands.Cog):
         channel_id = config.get("channel_id")
         channel_mention = f"<#{channel_id}>" if channel_id else "Не встановлено"
         
-        events_today = config.get("events_today", 0)
+        current_time = int(time.time())
         last_time = config.get("last_event_time", 0)
-        next_possible = last_time + 14400
         
-        if events_today >= 3:
-            cooldown_text = "Ліміт вичерпано (3/3). Чекайте до завтра."
-        elif next_possible > int(time.time()):
-            cooldown_text = f"Кулдаун. Наступна можлива подія: <t:{next_possible}:R>"
-        else:
-            cooldown_text = "Готово до спавну (йдуть перевірки шансу)"
+        hours_passed = (current_time - last_time) / 3600.0 if last_time > 0 else 8.0
+        current_chance = ((hours_passed / 8.0) ** 2) * 0.10
+        if (8 <= datetime.now().hour < 12) or (17 <= datetime.now().hour < 19):
+            current_chance *= 1.5
+            
+        chance_percent = min(50.0, current_chance * 100)
 
         embed = discord.Embed(title="⚙️ Панель керування: Випадкові події", color=0x34495e)
         embed.add_field(name="Статус", value=is_enabled, inline=True)
         embed.add_field(name="Канал", value=channel_mention, inline=True)
-        embed.add_field(name="Подій сьогодні", value=f"`{events_today}/3`", inline=True)
-        embed.add_field(name="Стан системи", value=cooldown_text, inline=False)
+        embed.add_field(name="Остання подія", value=f"<t:{last_time}:R>" if last_time else "Ніколи", inline=True)
+        embed.add_field(name="Динамічний шанс спавну", value=f"~`{chance_percent:.2f}%` кожні 5 хв", inline=False)
         
         weights = config.get("weights", {})
         weight_str = ", ".join([f"{EVENT_CATEGORIES[k]['name']}: {weights.get(k, 10)}" for k in list(EVENT_CATEGORIES.keys())[:3]]) + "..."
         embed.add_field(name="Налаштування ваг (Шансів)", value=weight_str, inline=False)
+        embed.set_footer(text="Шанс автоматично росте по експоненті від часу останньої події.")
 
         await interaction.response.send_message(embed=embed, view=EventAdminView(self, guild_id), ephemeral=True)
 

@@ -20,7 +20,7 @@ RAW_NAMES = {
 }
 
 # ==========================================
-# ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ СИРОВИНИ
+# ДОПОМІЖНІ ФУНКЦІЇ
 # ==========================================
 
 def get_user_raw_amount(mono_data: dict, user_id: str, res_type: str) -> int:
@@ -68,6 +68,64 @@ def parse_items_string(s: str) -> dict:
             except: pass
     return res
 
+def get_available_rarities(recipes: dict, items_db: dict) -> list:
+    """Отримує всі унікальні рідкості з рецептів для фільтра"""
+    rarities = set()
+    for r in recipes.values():
+        r_name = items_db.get(r["target_item"], {}).get("rarity", "Звичайна")
+        rarities.add(r_name.capitalize())
+    
+    sorted_rarities = list(rarities)
+    # Звичайна рідкість завжди йде першою
+    if "Звичайна" in sorted_rarities:
+        sorted_rarities.remove("Звичайна")
+        sorted_rarities.insert(0, "Звичайна")
+    elif not sorted_rarities:
+        sorted_rarities = ["Звичайна"]
+        
+    return sorted_rarities
+
+def get_crafts_embed(recipes: dict, items_db: dict, target_rarity: str) -> discord.Embed:
+    """Створює Embed зі списком крафтів конкретної рідкості"""
+    embed = discord.Embed(
+        title=f"⚒️ Майстерня: {target_rarity} рідкість", 
+        description="Оберіть фільтр рідкості або натисніть зелену кнопку, щоб ввести ID рецепту і почати крафт.", 
+        color=0xe67e22
+    )
+    
+    count = 0
+    for r_id, r in recipes.items():
+        item_data = items_db.get(r["target_item"], {})
+        rarity = item_data.get("rarity", "Звичайна").capitalize()
+        
+        if rarity != target_rarity: 
+            continue
+            
+        target_name = item_data.get("name", r["target_item"])
+        
+        reqs = []
+        if r.get("req_money", 0) > 0: reqs.append(f"💰 `{r['req_money']} AC`")
+        for rt, amt in r.get("req_raw", {}).items():
+            if amt > 0: reqs.append(f"📦 {RAW_NAMES.get(rt, rt)}: `{amt}`")
+        for it, amt in r.get("req_items", {}).items():
+            if amt > 0:
+                it_name = items_db.get(it, {}).get("name", it)
+                reqs.append(f"🎒 {it_name}: `{amt}`")
+                
+        req_str = "\n".join(reqs) if reqs else "Безкоштовно"
+        
+        embed.add_field(
+            name=f"🔨 {target_name} | ID: `{r_id}`",
+            value=f"**Час:** {r['time_secs']} сек.\n**Шанс успіху:** {r['min_chance']}% - {r['max_chance']}%\n**Вимоги:**\n{req_str}",
+            inline=True
+        )
+        count += 1
+        
+    if count == 0:
+        embed.description = f"У категорії «{target_rarity}» наразі немає рецептів."
+        
+    return embed
+
 # ==========================================
 # UI: ЧЕРГА ТА ВІДМІНА КРАФТУ
 # ==========================================
@@ -80,7 +138,7 @@ class CraftQueueView(discord.ui.View):
 
     @discord.ui.button(label="Оновити статус", style=discord.ButtonStyle.primary, emoji="🔄", row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("Не ваш профіль.", ephemeral=True)
+        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("❌ Не ваш профіль.", ephemeral=True)
         await self.cog.show_queue(interaction, self.user_id, edit=True)
 
     @discord.ui.select(placeholder="Скасувати крафт (Оберіть номер у черзі)...", min_values=1, max_values=1, options=[
@@ -91,7 +149,7 @@ class CraftQueueView(discord.ui.View):
         discord.SelectOption(label="Відмінити Слот 5", value="4"),
     ], row=0)
     async def cancel_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("Це не ваша черга.", ephemeral=True)
+        if str(interaction.user.id) != self.user_id: return await interaction.response.send_message("❌ Це не ваша черга.", ephemeral=True)
         
         index = int(select.values[0])
         guild_id = interaction.guild.id
@@ -103,7 +161,7 @@ class CraftQueueView(discord.ui.View):
         queue = user_data["crafting_queue"]
         
         if index >= len(queue):
-            return await interaction.response.send_message("У цьому слоті немає крафту.", ephemeral=True)
+            return await interaction.response.send_message("❌ У цьому слоті немає крафту.", ephemeral=True)
             
         canceled_item = queue.pop(index)
         costs = canceled_item.get("costs", {})
@@ -128,33 +186,33 @@ class CraftQueueView(discord.ui.View):
         save_guild_json(guild_id, DATA_FILE, data)
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         
-        await interaction.response.send_message(f"Крафт скасовано. Ресурси та гроші частково/повністю повернуто на ваші рахунки.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Крафт скасовано. Ресурси та гроші повністю повернуто.", ephemeral=True)
         await self.cog.show_queue(interaction, self.user_id, edit=True)
 
 # ==========================================
-# UI: ВИБІР РЕЦЕПТУ ТА КРАФТ
+# UI: ВИБІР РІДКІСТІ ТА КРАФТ ЗА ID
 # ==========================================
 
-class CraftRecipeSelect(discord.ui.Select):
+class CraftByIdModal(discord.ui.Modal, title="Початок крафту"):
+    recipe_id_input = discord.ui.TextInput(
+        label="Введіть ID рецепту", 
+        placeholder="Наприклад: a1b2c3", 
+        required=True,
+        style=discord.TextStyle.short
+    )
+
     def __init__(self, cog: commands.Cog, recipes: dict, items_db: dict):
+        super().__init__()
         self.cog = cog
         self.recipes = recipes
         self.items_db = items_db
-        
-        options = []
-        for r_id, r_data in list(recipes.items())[:25]:
-            target_name = items_db.get(r_data["target_item"], {}).get("name", "Невідомий предмет")
-            options.append(discord.SelectOption(
-                label=target_name,
-                value=r_id,
-                description=f"⏱️ {r_data['time_secs']} сек | Шанс: {r_data['min_chance']}% - {r_data['max_chance']}%",
-                emoji="⚒️"
-            ))
-            
-        super().__init__(placeholder="Оберіть предмет для створення...", options=options)
 
-    async def callback(self, interaction: discord.Interaction):
-        recipe_id = self.values[0]
+    async def on_submit(self, interaction: discord.Interaction):
+        recipe_id = self.recipe_id_input.value.strip()
+        
+        if recipe_id not in self.recipes:
+            return await interaction.response.send_message(f"❌ Рецепт з ID `{recipe_id}` не знайдено! Перевірте правильність написання.", ephemeral=True)
+            
         recipe = self.recipes[recipe_id]
         guild_id = interaction.guild.id
         user_id = str(interaction.user.id)
@@ -166,7 +224,7 @@ class CraftRecipeSelect(discord.ui.Select):
         queue = user_data["crafting_queue"]
         
         if len(queue) >= 5:
-            return await interaction.response.send_message("Ваша черга крафту заповнена (Максимум 5 предметів). Зачекайте завершення.", ephemeral=True)
+            return await interaction.response.send_message("❌ Ваша черга крафту заповнена (Максимум 5 предметів). Зачекайте завершення.", ephemeral=True)
 
         # === ПЕРЕВІРКА РЕСУРСІВ ===
         req_money = recipe.get("req_money", 0)
@@ -174,11 +232,11 @@ class CraftRecipeSelect(discord.ui.Select):
         req_items = recipe.get("req_items", {})
 
         if user_data["balance"] < req_money:
-            return await interaction.response.send_message(f"Недостатньо AC. Потрібно: {req_money}", ephemeral=True)
+            return await interaction.response.send_message(f"❌ Недостатньо AC. Потрібно: {req_money}", ephemeral=True)
             
         for r_type, amt in req_raw.items():
             if get_user_raw_amount(mono_data, user_id, r_type) < amt:
-                return await interaction.response.send_message(f"Недостатньо сировини: **{RAW_NAMES.get(r_type, r_type)}**. Потрібно: {amt}", ephemeral=True)
+                return await interaction.response.send_message(f"❌ Недостатньо сировини: **{RAW_NAMES.get(r_type, r_type)}**. Потрібно: {amt}", ephemeral=True)
                 
         from collections import Counter
         inv_counts = Counter(user_data["inventory"])
@@ -186,15 +244,13 @@ class CraftRecipeSelect(discord.ui.Select):
         for i_id, amt in req_items.items():
             if inv_counts.get(i_id, 0) < amt:
                 item_name = self.items_db.get(i_id, {}).get("name", i_id)
-                return await interaction.response.send_message(f"Недостатньо предметів: **{item_name}**. Потрібно: {amt}", ephemeral=True)
+                return await interaction.response.send_message(f"❌ Недостатньо предметів: **{item_name}**. Потрібно: {amt}", ephemeral=True)
             items_to_remove.extend([i_id] * amt)
 
         # === СПИСАННЯ РЕСУРСІВ ===
         user_data["balance"] -= req_money
-        
         for r_type, amt in req_raw.items():
             deduct_user_raw_amount(mono_data, user_id, r_type, amt)
-            
         for item in items_to_remove:
             user_data["inventory"].remove(item)
 
@@ -223,17 +279,40 @@ class CraftRecipeSelect(discord.ui.Select):
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         
         target_name = self.items_db.get(recipe["target_item"], {}).get("name", "Предмет")
-        await interaction.response.send_message(f"Виготовлення **{target_name}** успішно додано до черги! Завершиться <t:{end_time}:R>.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Виготовлення **{target_name}** успішно додано до черги! Завершиться <t:{end_time}:R>.", ephemeral=True)
+
+class RarityFilterSelect(discord.ui.Select):
+    def __init__(self, cog: commands.Cog, recipes: dict, items_db: dict, available_rarities: list):
+        self.cog = cog
+        self.recipes = recipes
+        self.items_db = items_db
+        options = [discord.SelectOption(label=r, value=r, emoji="🔖") for r in available_rarities[:25]]
+        
+        super().__init__(
+            placeholder="Фільтрувати за рідкістю...", 
+            min_values=1, 
+            max_values=1, 
+            options=options,
+            row=0
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        target_rarity = self.values[0]
+        embed = get_crafts_embed(self.recipes, self.items_db, target_rarity)
+        await interaction.response.edit_message(embed=embed)
 
 class CraftMenuView(discord.ui.View):
-    def __init__(self, cog, recipes: dict, items_db: dict):
+    def __init__(self, cog, recipes: dict, items_db: dict, available_rarities: list):
         super().__init__(timeout=120)
-        self.add_item(CraftRecipeSelect(cog, recipes, items_db))
+        self.cog = cog
+        self.recipes = recipes
+        self.items_db = items_db
+        
+        self.add_item(RarityFilterSelect(cog, recipes, items_db, available_rarities))
 
-
-# ==========================================
-# ОСНОВНИЙ КОГ: КРАФТ
-# ==========================================
+    @discord.ui.button(label="Ввести ID крафту", style=discord.ButtonStyle.success, emoji="⚒️", row=1)
+    async def start_craft_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(CraftByIdModal(self.cog, self.recipes, self.items_db))
 
 class CraftsCog(commands.Cog):
     def __init__(self, bot):
@@ -278,7 +357,6 @@ class CraftsCog(commands.Cog):
                             user_data["inventory"].append(finished_item["target_item"])
                             continue
                             
-                        # === РОЗРАХУНОК ШАНСІВ ===
                         user_lvl = user_data.get("level", 1)
                         chance = min(recipe["min_chance"] + user_lvl, recipe["max_chance"])
                         
@@ -291,18 +369,17 @@ class CraftsCog(commands.Cog):
                         if chance > 0 and random.randint(1, 100) <= chance:
                             crafted_count += 1
                             
-                        # === РЕЗУЛЬТАТ ===
                         guild = self.bot.get_guild(guild_id)
                         member = guild.get_member(int(uid)) if guild else None
                         
                         if crafted_count > 0:
                             user_data["inventory"].extend([finished_item["target_item"]] * crafted_count)
                             if member:
-                                try: await member.send(f"Ваш крафт завершено! Ви отримали: **{target_name}** (x{crafted_count}).")
+                                try: await member.send(f"🎉 Ваш крафт завершено! Ви отримали: **{target_name}** (x{crafted_count}).")
                                 except: pass
                         else:
                             if member:
-                                try: await member.send(f"Крафт не вдався... Ваші ресурси згоріли під час спроби зробити **{target_name}**.")
+                                try: await member.send(f"💥 Крафт не вдався... Ваші ресурси згоріли під час спроби зробити **{target_name}**.")
                                 except: pass
 
                 if updated:
@@ -324,29 +401,13 @@ class CraftsCog(commands.Cog):
         if not recipes:
             return await interaction.response.send_message("На сервері ще немає доступних рецептів для крафту.", ephemeral=True)
             
-        embed = discord.Embed(title="⚒️ Майстерня: Доступні рецепти", description="Використовуйте меню нижче, щоб додати крафт у чергу.", color=0xe67e22)
+        available_rarities = get_available_rarities(recipes, items_db)
+        default_rarity = "Звичайна" if "Звичайна" in available_rarities else available_rarities[0]
+            
+        embed = get_crafts_embed(recipes, items_db, default_rarity)
+        view = CraftMenuView(self, recipes, items_db, available_rarities)
         
-        for r_id, r in recipes.items():
-            target_name = items_db.get(r["target_item"], {}).get("name", r["target_item"])
-            
-            reqs = []
-            if r.get("req_money", 0) > 0: reqs.append(f"💰 `{r['req_money']} AC`")
-            for rt, amt in r.get("req_raw", {}).items():
-                if amt > 0: reqs.append(f"📦 {RAW_NAMES.get(rt, rt)}: `{amt}`")
-            for it, amt in r.get("req_items", {}).items():
-                if amt > 0:
-                    it_name = items_db.get(it, {}).get("name", it)
-                    reqs.append(f"🎒 {it_name}: `{amt}`")
-                    
-            req_str = "\n".join(reqs) if reqs else "Безкоштовно"
-            
-            embed.add_field(
-                name=f"🔨 {target_name}",
-                value=f"**Час:** {r['time_secs']} сек.\n**Шанс успіху:** {r['min_chance']}% (Макс: {r['max_chance']}%)\n**Вимоги:**\n{req_str}",
-                inline=True
-            )
-            
-        await interaction.response.send_message(embed=embed, view=CraftMenuView(self, recipes, items_db), ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     async def show_queue(self, interaction: discord.Interaction, user_id: str, edit: bool = False):
         guild_id = interaction.guild.id
@@ -387,11 +448,13 @@ class CraftsCog(commands.Cog):
 
     @app_commands.command(name="admin_craft_add", description="[АДМІН] Створити новий рецепт")
     @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True) 
     @app_commands.describe(
         target_item="ID предмета з /items_list, який буде створено",
         time_secs="Час на крафт у секундах",
         req_items="ID необхідних предметів (напр: wood:2,iron:1)"
     )
+    @app_commands.guild_only()
     async def admin_craft_add(self, interaction: discord.Interaction, 
                               target_item: str, time_secs: int, min_chance: int, max_chance: int,
                               req_money: int = 0, req_materials: int = 0, req_crops: int = 0, req_data: int = 0,
@@ -403,7 +466,7 @@ class CraftsCog(commands.Cog):
         
         target_item = target_item.lower().strip().replace(" ", "_")
         if target_item not in items_db:
-            return await interaction.response.send_message(f"Предмет `{target_item}` не існує в базі. Створіть його через /item_create.", ephemeral=True)
+            return await interaction.response.send_message(f"❌ Предмет `{target_item}` не існує в базі. Створіть його через /item_create.", ephemeral=True)
             
         recipe_id = str(uuid.uuid4())[:6]
         parsed_items = parse_items_string(req_items)
@@ -423,20 +486,22 @@ class CraftsCog(commands.Cog):
         }
         
         save_guild_json(guild_id, CRAFTS_FILE, recipes)
-        await interaction.response.send_message(f"Рецепт успішно створено! ID рецепту: `{recipe_id}`", ephemeral=True)
+        await interaction.response.send_message(f"✅ Рецепт успішно створено! ID рецепту: `{recipe_id}`", ephemeral=True)
 
     @app_commands.command(name="admin_craft_remove", description="[АДМІН] Видалити рецепт за його ID")
     @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True) 
+    @app_commands.guild_only()
     async def admin_craft_remove(self, interaction: discord.Interaction, recipe_id: str):
         guild_id = interaction.guild.id
         recipes = load_guild_json(guild_id, CRAFTS_FILE)
         
         if recipe_id not in recipes:
-            return await interaction.response.send_message("Рецепт з таким ID не знайдено.", ephemeral=True)
+            return await interaction.response.send_message("❌ Рецепт з таким ID не знайдено.", ephemeral=True)
             
         del recipes[recipe_id]
         save_guild_json(guild_id, CRAFTS_FILE, recipes)
-        await interaction.response.send_message(f"Рецепт `{recipe_id}` видалено.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Рецепт `{recipe_id}` успішно видалено.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(CraftsCog(bot))

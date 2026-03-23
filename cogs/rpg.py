@@ -31,10 +31,17 @@ QUEST_TYPES_UA = {
 # ДОПОМІЖНІ ФУНКЦІЇ
 # ==========================================
 
-def get_upgrade_cost(current_level: int) -> int:
+def get_upgrade_cost(current_level: int, is_main_level: bool = False) -> int:
+    """
+    Формула: (рівень)**2 * ln(рівень).
+    Для загального рівня вартість множиться на 2.
+    """
     if current_level <= 1:
-        return 15
-    return max(15, int((current_level ** 2) * math.log(current_level)))
+        base_cost = 15
+    else:
+        base_cost = max(15, int((current_level ** 2) * math.log(current_level)))
+        
+    return base_cost * 2 if is_main_level else base_cost
 
 def get_quests_data(guild_id: int) -> dict:
     data = load_guild_json(guild_id, QUESTS_FILE)
@@ -68,7 +75,7 @@ class UpgradeSelect(discord.ui.Select):
             ))
             
         main_lvl = user.get("level", 1)
-        main_cost = get_upgrade_cost(main_lvl)
+        main_cost = get_upgrade_cost(main_lvl, is_main_level=True) 
         options.append(discord.SelectOption(
             label=f"🌟 Загальний рівень (Пот: {main_lvl})",
             value="main_level",
@@ -88,7 +95,7 @@ class UpgradeSelect(discord.ui.Select):
         
         if stat_key == "main_level":
             current_lvl = user.get("level", 1)
-            cost = get_upgrade_cost(current_lvl)
+            cost = get_upgrade_cost(current_lvl, is_main_level=True) 
             if user["balance"] < cost:
                 return await interaction.response.send_message(f"❌ Недостатньо коштів. Потрібно: `{cost} AC`.", ephemeral=True)
                 
@@ -97,7 +104,7 @@ class UpgradeSelect(discord.ui.Select):
             msg = f"🌟 Ваш загальний рівень підвищено до **{user['level']}**!"
         else:
             current_lvl = user["stats"].get(stat_key, 1)
-            cost = get_upgrade_cost(current_lvl)
+            cost = get_upgrade_cost(current_lvl) 
             if user["balance"] < cost:
                 return await interaction.response.send_message(f"❌ Недостатньо коштів. Потрібно: `{cost} AC`.", ephemeral=True)
                 

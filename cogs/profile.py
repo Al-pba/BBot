@@ -31,7 +31,7 @@ class ProfileBaseView(discord.ui.View):
 # ==========================================
 
 class StatsProfileView(ProfileBaseView):
-    @discord.ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    @discord.ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -40,6 +40,19 @@ class StatsProfileView(ProfileBaseView):
         member = interaction.guild.get_member(self.target_user.id)
         embed = self.cog.build_main_embed(self.target_user, member, user_data)
         await interaction.response.edit_message(embed=embed, view=MainProfileView(self.target_user, self.cog, self.author_id))
+
+    @discord.ui.button(label="Прокачка", style=discord.ButtonStyle.success, emoji="📈", row=0)
+    async def upgrade_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.interaction_check(interaction): return
+        
+        if interaction.user.id != self.target_user.id:
+            return await interaction.response.send_message("❌ Ви можете прокачувати лише власні характеристики!", ephemeral=True)
+            
+        rpg_cog = interaction.client.get_cog("RPGCog")
+        if not rpg_cog:
+            return await interaction.response.send_message("❌ Систему RPG наразі вимкнено або не знайдено.", ephemeral=True)
+            
+        await rpg_cog.upgrade_stats.callback(rpg_cog, interaction)
 
 class InventoryProfileView(ProfileBaseView):
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="⬅️")

@@ -1,11 +1,20 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from utils import load_guild_json, save_guild_json
 
 DATA_FILE = "users.json"
 ITEMS_TEMPLATES = "items_templates.json"
 SHOP_FILE = "shop_stock.json"
+
+RARITY_ORDER = {
+    "міфічна": 6,
+    "легендарна": 5,
+    "епічна": 4,
+    "рідкісна": 3,
+    "незвичайна": 2,
+    "звичайна": 1
+}
 
 class ShopCog(commands.Cog):
     def __init__(self, bot):
@@ -24,7 +33,12 @@ class ShopCog(commands.Cog):
         data[uid].setdefault("inventory", [])
         return data[uid]
 
-   
+    def get_rarity_weight(self, rarity_str: str) -> int:
+        """Отримує вагу рідкості для сортування"""
+        if not rarity_str: 
+            return 0
+        return RARITY_ORDER.get(rarity_str.lower().strip(), 0)
+
     @app_commands.command(name="shop_remove", description="Видалити предмет з вітрини магазину")
     @app_commands.default_permissions(administrator=True)
     @app_commands.guild_only()
@@ -54,16 +68,21 @@ class ShopCog(commands.Cog):
         embed = discord.Embed(title="🛒 Міський Магазин", color=discord.Color.blue())
         embed.set_footer(text="Купити: /buy <ID> | Продати: /sell <ID>")
 
-        fields_count = 0
+        shop_items = []
         for i_id, info in shop.items():
-            if fields_count >= 25: break
-            
             item = templates.get(i_id)
-            if not item: continue
+            if item:
+                shop_items.append((i_id, info, item))
+
+        shop_items.sort(key=lambda x: self.get_rarity_weight(x[2].get('rarity', '')), reverse=True)
+
+        fields_count = 0
+        for i_id, info, item in shop_items:
+            if fields_count >= 25: break
             
             stock_text = "∞ (Нескінченно)" if info['stock'] == -1 else f"{info['stock']} шт."
             embed.add_field(
-                name=f"{item['rarity']} {item['name']}",
+                name=f"{item['rarity'].capitalize()} {item['name']}",
                 value=f"🆔 ID: `{i_id}`\n💰 Купівля: `{info['price']} AC`\n💵 Продаж: `{info['sell_price']} AC`\n📦 В наявності: {stock_text}",
                 inline=True
             )
@@ -134,7 +153,6 @@ class ShopCog(commands.Cog):
         
         user["balance"] += sell_reward
         
-        # === ОСЬ ТУТ ДОДАЄМО ТОВАР НА СТОК МАГАЗИНУ ===
         if shop[processed_id]["stock"] != -1:
             shop[processed_id]["stock"] += amount
 
