@@ -38,11 +38,11 @@ class StatsProfileView(ProfileBaseView):
         if not await self.interaction_check(interaction): return
         
         if interaction.user.id != self.target_user.id:
-            return await interaction.response.send_message("❌ Ви можете прокачувати лише власні характеристики!", ephemeral=True)
+            return await interaction.response.send_message("Ви можете прокачувати лише власні характеристики!", ephemeral=True)
             
         rpg_cog = interaction.client.get_cog("RPGCog")
         if not rpg_cog:
-            return await interaction.response.send_message("❌ Систему RPG наразі вимкнено або не знайдено.", ephemeral=True)
+            return await interaction.response.send_message("Систему RPG наразі вимкнено або не знайдено.", ephemeral=True)
             
         await rpg_cog.upgrade_stats.callback(rpg_cog, interaction)
 
@@ -57,12 +57,12 @@ class InventoryProfileView(ProfileBaseView):
         embed = self.cog.build_main_embed(self.target_user, member, user_data)
         await interaction.response.edit_message(embed=embed, view=MainProfileView(self.target_user, self.cog, self.author_id))
 
-    @discord.ui.button(label="Приватність банку", style=discord.ButtonStyle.secondary, row=0, emoji="👁️")
+    @discord.ui.button(label="Приховати", style=discord.ButtonStyle.secondary, row=0, emoji="👁️")
     async def privacy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.interaction_check(interaction): return
         
         if interaction.user.id != self.target_user.id:
-            return await interaction.response.send_message("❌ Ви можете змінювати приватність лише у власному профілі!", ephemeral=True)
+            return await interaction.response.send_message("Ви можете змінювати приватність лише у власному профілі!", ephemeral=True)
             
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -185,7 +185,7 @@ class ProfileCog(commands.Cog):
     @commands.guild_only()
     async def sync_msgs(self, ctx):
         if ctx.author.id != ctx.guild.owner_id:
-            return await ctx.send("❌ Ця команда доступна лише власнику сервера.")
+            return await ctx.send("Ця команда доступна лише власнику сервера.")
 
         await ctx.send("🔄 Починаю глибоке сканування всіх каналів. Це може зайняти від кількох хвилин до години. Я напишу, коли закінчу!")
         
@@ -198,7 +198,7 @@ class ProfileCog(commands.Cog):
         for channel in ctx.guild.text_channels:
             try:
                 async for message in channel.history(limit=None):
-                    if not message.author.bot: # Ботів не рахуємо
+                    if not message.author.bot:
                         uid = str(message.author.id)
                         user_counts[uid] = user_counts.get(uid, 0) + 1
                     total_scanned += 1
