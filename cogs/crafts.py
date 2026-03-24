@@ -76,7 +76,6 @@ def get_available_rarities(recipes: dict, items_db: dict) -> list:
         rarities.add(r_name.capitalize())
     
     sorted_rarities = list(rarities)
-    # Звичайна рідкість завжди йде першою
     if "Звичайна" in sorted_rarities:
         sorted_rarities.remove("Звичайна")
         sorted_rarities.insert(0, "Звичайна")

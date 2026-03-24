@@ -94,23 +94,36 @@ class CryptoActionModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         val_str = self.amount_input.value.replace(',', '.')
+        current_time = int(time.time()) 
         
         try:
             amount = float(val_str)
         except ValueError:
             return await interaction.response.send_message("Будь ласка, введіть коректне число!", ephemeral=True)
             
-        if amount <= 0:
-            return await interaction.response.send_message("Кількість має бути більшою за 0!", ephemeral=True)
+        if amount < 0.001:
+            return await interaction.response.send_message("Мінімальна кількість для торгівлі: 0.001", ephemeral=True)
 
-        market = load_guild_json(guild_id, CRYPTO_MARKET_FILE)
-        config = load_guild_json(guild_id, ECONOMY_CONFIG)
         data = load_guild_json(guild_id, DATA_FILE)
-        
         uid = str(interaction.user.id)
+        
         if uid not in data:
             data[uid] = {"balance": 0, "crypto": {}}
         user = data[uid]
+
+        if self.action == "buy":
+            last_buy = user.get("last_buy_action", 0)
+            if current_time - last_buy < 10:
+                wait_time = 10 - (current_time - last_buy)
+                return await interaction.response.send_message(f"⏳ Занадто швидко! Зачекайте ще **{wait_time} сек.** перед наступною покупкою.", ephemeral=True)
+        else:
+            last_sell = user.get("last_sell_action", 0)
+            if current_time - last_sell < 30:
+                wait_time = 30 - (current_time - last_sell)
+                return await interaction.response.send_message(f"⏳ Ринок перевантажено! Зачекайте ще **{wait_time} сек.** перед наступним продажем.", ephemeral=True)
+
+        market = load_guild_json(guild_id, CRYPTO_MARKET_FILE)
+        config = load_guild_json(guild_id, ECONOMY_CONFIG)
 
         if self.symbol not in market:
             return await interaction.response.send_message("Валюту не знайдено на біржі.", ephemeral=True)
@@ -122,8 +135,11 @@ class CryptoActionModal(discord.ui.Modal):
             buy_commission = config.get("buy_commission", 0.05)
             total_cost = int(price * amount * (1 + buy_commission))
             
+            if total_cost < 1:
+                return await interaction.response.send_message("Сума угоди занадто мала! Витрати мають становити мінімум 1 AC.", ephemeral=True)
+            
             if user.get("balance", 0) < total_cost:
-                return await interaction.response.send_message(f"❌ Недостатньо AC! Треба `{total_cost}`.", ephemeral=True)
+                return await interaction.response.send_message(f"Недостатньо AC! Треба `{total_cost}`.", ephemeral=True)
 
             commission_amount = int(price * amount * buy_commission)
             owner_share = int(price * amount * 0.01) if owner_id != "None" and owner_id != "None" else 0
@@ -136,23 +152,28 @@ class CryptoActionModal(discord.ui.Modal):
                 data[owner_id]["balance"] = data[owner_id].get("balance", 0) + owner_share
             
             user.setdefault("crypto", {})[self.symbol] = user["crypto"].get(self.symbol, 0) + amount
-            user.setdefault("crypto_timestamps", {})[self.symbol] = int(time.time())
+            user.setdefault("crypto_timestamps", {})[self.symbol] = current_time
+            
+            user["last_buy_action"] = current_time 
 
-            msg = f"✅ Куплено **{amount} {self.symbol}** за `{total_cost} AC`."
+            msg = f"Куплено **{amount} {self.symbol}** за `{total_cost} AC`."
 
         else:
             if self.symbol not in user.get("crypto", {}) or user["crypto"][self.symbol] < amount:
-                return await interaction.response.send_message("❌ Недостатньо криптовалюти для продажу.", ephemeral=True)
+                return await interaction.response.send_message("Недостатньо криптовалюти для продажу.", ephemeral=True)
 
             sell_commission = config.get("sell_commission", 0.05)
             market_spread = config.get("market_spread", 0.10)
             base_sell = int(price * amount * (1 - sell_commission - market_spread))
             
+            if base_sell < 1:
+                return await interaction.response.send_message("Сума продажу занадто мала! Ви маєте отримати мінімум 1 AC.", ephemeral=True)
+            
             owner_share = int(price * amount * 0.01) if owner_id != "None" else 0
             
             last_buy = user.get("crypto_timestamps", {}).get(self.symbol, 0)
             penalty_msg = ""
-            if (int(time.time()) - last_buy) < 7200:
+            if (current_time - last_buy) < 7200:
                 penalty = int(base_sell * config.get("paper_hands_tax", 0.15))
                 base_sell -= penalty
                 config["server_bank"] = config.get("server_bank", 0) + penalty
@@ -164,7 +185,9 @@ class CryptoActionModal(discord.ui.Modal):
             if owner_id != "None" and owner_id in data:
                 data[owner_id]["balance"] = data[owner_id].get("balance", 0) + owner_share
 
-            msg = f"✅ Продано **{amount} {self.symbol}** за `{base_sell} AC`.{penalty_msg}"
+            user["last_sell_action"] = current_time
+
+            msg = f"Продано **{amount} {self.symbol}** за `{base_sell} AC`.{penalty_msg}"
 
         market = self.cog.apply_market_impact(market, self.symbol, amount, is_buy=(self.action == "buy"))
 
