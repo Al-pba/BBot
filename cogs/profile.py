@@ -8,10 +8,6 @@ from utils import load_guild_json, save_guild_json
 DATA_FILE = "users.json"
 ITEMS_TEMPLATES = "items_templates.json"
 
-# ==========================================
-# БАЗОВИЙ КЛАС ДЛЯ UI (ОПТИМІЗАЦІЯ)
-# ==========================================
-
 class ProfileBaseView(discord.ui.View):
     """Базовий клас для перевірки, що кнопки тисне тільки автор команди."""
     def __init__(self, target_user: discord.User, cog: commands.Cog, author_id: int):
@@ -25,10 +21,6 @@ class ProfileBaseView(discord.ui.View):
             return True
         await interaction.response.send_message("Це не ваше меню!", ephemeral=True)
         return False
-
-# ==========================================
-# ДОПОМІЖНІ СТОРІНКИ
-# ==========================================
 
 class StatsProfileView(ProfileBaseView):
     @discord.ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
@@ -55,7 +47,7 @@ class StatsProfileView(ProfileBaseView):
         await rpg_cog.upgrade_stats.callback(rpg_cog, interaction)
 
 class InventoryProfileView(ProfileBaseView):
-    @discord.ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="⬅️")
+    @discord.ui.button(label="Назад", style=discord.ButtonStyle.secondary, emoji="⬅️", row=0)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = interaction.guild.id
         data = load_guild_json(guild_id, DATA_FILE)
@@ -65,9 +57,26 @@ class InventoryProfileView(ProfileBaseView):
         embed = self.cog.build_main_embed(self.target_user, member, user_data)
         await interaction.response.edit_message(embed=embed, view=MainProfileView(self.target_user, self.cog, self.author_id))
 
-# ==========================================
-# ГОЛОВНЕ МЕНЮ
-# ==========================================
+    @discord.ui.button(label="Приватність банку", style=discord.ButtonStyle.secondary, row=0, emoji="👁️")
+    async def privacy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await self.interaction_check(interaction): return
+        
+        if interaction.user.id != self.target_user.id:
+            return await interaction.response.send_message("❌ Ви можете змінювати приватність лише у власному профілі!", ephemeral=True)
+            
+        guild_id = interaction.guild.id
+        data = load_guild_json(guild_id, DATA_FILE)
+        user_data = self.cog.get_user_data(data, self.target_user.id)
+        
+        current_status = user_data.get("bank_hidden", False)
+        user_data["bank_hidden"] = not current_status
+        save_guild_json(guild_id, DATA_FILE, data)
+        
+        embed = self.cog.build_inventory_embed(self.target_user, user_data, guild_id)
+        await interaction.response.edit_message(embed=embed, view=self)
+        
+        state = "приховано (***)" if user_data["bank_hidden"] else "відкрито"
+        await interaction.followup.send(f"🏦 Ваш банківський рахунок тепер {state} для інших.", ephemeral=True)
 
 class MainProfileView(discord.ui.View):
     def __init__(self, target_user: discord.User, cog: commands.Cog, author_id: int):
@@ -150,29 +159,6 @@ class MainProfileView(discord.ui.View):
         embed.description = desc if desc else "Гаманець порожній."
         
         await interaction.response.edit_message(embed=embed, view=InventoryProfileView(self.target_user, self.cog, self.author_id))
-
-    # === НОВА КНОПКА: ПРИВАТНІСТЬ БАНКУ ===
-    @discord.ui.button(label="Приватність банку", style=discord.ButtonStyle.secondary, row=1, emoji="👁️")
-    async def privacy_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self.check_author(interaction): return
-        if interaction.user.id != self.target_user.id:
-            return await interaction.response.send_message("❌ Ви можете змінювати приватність лише у власному профілі!", ephemeral=True)
-            
-        guild_id = interaction.guild.id
-        data = load_guild_json(guild_id, DATA_FILE)
-        user_data = self.cog.get_user_data(data, self.target_user.id)
-        
-        current_status = user_data.get("bank_hidden", False)
-        user_data["bank_hidden"] = not current_status
-        save_guild_json(guild_id, DATA_FILE, data)
-        
-        state = "приховано (***)" if user_data["bank_hidden"] else "відкрито"
-        await interaction.response.send_message(f"🏦 Ваш банківський рахунок тепер {state} для інших.", ephemeral=True)
-
-
-# ==========================================
-# COG КЛАС
-# ==========================================
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
