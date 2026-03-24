@@ -137,15 +137,7 @@ class MainProfileView(discord.ui.View):
         embed = self.cog.build_stats_embed(self.target_user, user_data)
         await interaction.response.edit_message(embed=embed, view=StatsProfileView(self.target_user, self.cog, self.author_id))
 
-    @discord.ui.button(emoji="👍", style=discord.ButtonStyle.success, row=0)
-    async def like_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_vote(interaction, "like")
-
-    @discord.ui.button(emoji="👎", style=discord.ButtonStyle.danger, row=0)
-    async def dislike_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_vote(interaction, "dislike")
-
-    @discord.ui.button(label="Крипто", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Крипто", style=discord.ButtonStyle.secondary, row=0)
     async def crypto_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.check_author(interaction): return
         
@@ -159,6 +151,16 @@ class MainProfileView(discord.ui.View):
         embed.description = desc if desc else "Гаманець порожній."
         
         await interaction.response.edit_message(embed=embed, view=InventoryProfileView(self.target_user, self.cog, self.author_id))
+
+    @discord.ui.button(emoji="👍", style=discord.ButtonStyle.success, row=0)
+    async def like_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_vote(interaction, "like")
+
+    @discord.ui.button(emoji="👎", style=discord.ButtonStyle.danger, row=0)
+    async def dislike_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_vote(interaction, "dislike")
+
+    
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
