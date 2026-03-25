@@ -36,9 +36,33 @@ PROFESSIONS = {
     "сервер": ["робітник"]
 }
 
-# ==========================================
-# ДОПОМІЖНІ ФУНКЦІЇ
-# ==========================================
+def gen_id():
+    return str(uuid.uuid4())[:8]
+
+def get_rented_capacity(mono_data: dict, prop_id: str) -> int:
+    rented_out = sum(o["capacity"] for o in mono_data.get("rental_market", {}).values() if o["prop_id"] == prop_id)
+    rented_out += sum(r["capacity"] for r in mono_data.get("active_rentals", {}).values() if r["prop_id"] == prop_id)
+    return rented_out
+
+def process_transaction(users_data: dict, config_data: dict, payer_id: str, amount: int, payee_id: str = None) -> bool:
+    payer = users_data.get(payer_id, {})
+    if payer.get("balance", 0) < amount:
+        return False
+    
+    payer["balance"] -= amount
+    
+    if payee_id and payee_id in users_data:
+        users_data[payee_id]["balance"] = users_data.get(payee_id, {}).get("balance", 0) + amount
+    elif config_data is not None:
+        config_data["server_bank"] = config_data.get("server_bank", 0) + amount
+        
+    return True
+
+def get_total_items(storage: dict) -> int:
+    return sum(storage.values())
+
+def get_max_reserve(level: int) -> int:
+    return int(1000 * (1.10 ** (level - 1)))
 
 async def delete_company_data(guild: discord.Guild, owner_id: str, mono_data: dict):
     comp = mono_data["companies"].get(owner_id)
@@ -49,24 +73,20 @@ async def delete_company_data(guild: discord.Guild, owner_id: str, mono_data: di
         channel = guild.get_channel(channel_id)
         if channel:
             try: await channel.delete()
-            except: pass
+            except Exception as e: print(f"Не вдалося видалити канал: {e}")
             
     prop_ids = list(comp["properties"].keys())
-    offers_to_remove = [oid for oid, off in mono_data["rental_market"].items() if off["owner_id"] == owner_id]
-    for oid in offers_to_remove: del mono_data["rental_market"][oid]
+    
+    mono_data["rental_market"] = {k: v for k, v in mono_data["rental_market"].items() if v["owner_id"] != owner_id}
         
-    rentals_to_remove = [rid for rid, rent in list(mono_data["active_rentals"].items()) if rent["owner_id"] == owner_id]
+    rentals_to_remove = [rid for rid, rent in mono_data["active_rentals"].items() if rent["owner_id"] == owner_id or rent["renter_id"] == owner_id]
     for rid in rentals_to_remove:
         del mono_data["active_rentals"][rid]
-        for uid, c in mono_data["companies"].items():
+        for c in mono_data["companies"].values():
             for p in c["properties"].values():
                 if p.get("connected_to") == f"rent_{rid}":
                     p["connected_to"] = None
-                    
-    rentals_where_renter = [rid for rid, rent in list(mono_data["active_rentals"].items()) if rent["renter_id"] == owner_id]
-    for rid in rentals_where_renter:
-        del mono_data["active_rentals"][rid]
-        
+                
     for uid, c in mono_data["companies"].items():
         if uid == owner_id: continue
         for p in c["properties"].values():
@@ -77,30 +97,23 @@ async def delete_company_data(guild: discord.Guild, owner_id: str, mono_data: di
     save_guild_json(guild.id, MONOPOLY_FILE, mono_data)
 
 def get_monopoly_data(guild_id: int):
-    data = load_guild_json(guild_id, MONOPOLY_FILE)
-    if not data:
-        data = {
-            "market_prices": BASE_PRICES.copy(),
-            "used_market": [],
-            "companies": {},
-            "last_daily_tick": 0,
-            "rental_market": {},
-            "active_rentals": {} 
-        }
+    data = load_guild_json(guild_id, MONOPOLY_FILE) or {}
     
-    if "last_daily_tick" not in data: data["last_daily_tick"] = 0
-    if "rental_market" not in data: data["rental_market"] = {}
-    if "active_rentals" not in data: data["active_rentals"] = {}
+    data.setdefault("market_prices", BASE_PRICES.copy())
+    data.setdefault("used_market", [])
+    data.setdefault("companies", {})
+    data.setdefault("last_daily_tick", 0)
+    data.setdefault("rental_market", {})
+    data.setdefault("active_rentals", {})
     
-    # === ГЕНЕРАЦІЯ ДЕРЖАВНОГО ПІДПРИЄМСТВА ===
     if "STATE_COMPANY" not in data["companies"]:
         state_props = {
-            "state_warehouse": {"type": "склад", "name": "Державний Резерв", "level": 6, "durability": 100, "storage": {}, "connected_to": None, "hiring_mode": "open", "workers": {}, "salaries": {"логіст": 250, "охоронець": 300}, "purchase_price": 50000},
-            "state_factory": {"type": "завод", "name": "Державний Завод", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 150, "менеджер": 200}, "purchase_price": 50000},
-            "state_farm": {"type": "ферма", "name": "Державні Угіддя", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 120, "агроном": 200}, "purchase_price": 45000},
-            "state_office": {"type": "офіс", "name": "Державний Офіс", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 180, "менеджер": 250}, "purchase_price": 50000},
-            "state_server_1": {"type": "сервер", "name": "Головний Держ-Сервер", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_office", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 200}, "purchase_price": 30000},
-            "state_server_2": {"type": "сервер", "name": "Резервний Держ-Сервер", "level": 2, "durability": 100, "storage": {}, "connected_to": "state_office", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 160}, "purchase_price": 30000}
+            "state_warehouse": {"type": "склад", "name": "Державний Резерв", "level": 6, "durability": 100, "storage": {}, "connected_to": None, "hiring_mode": "open", "workers": {}, "salaries": {"логіст": 250, "охоронець": 300}, "vacancy_limits": {"логіст": 10, "охоронець": 10}, "reserve": 1000000, "purchase_price": 50000},
+            "state_factory": {"type": "завод", "name": "Державний Завод", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 150, "менеджер": 200}, "vacancy_limits": {"робітник": 5, "менеджер": 2}, "reserve": 1000000, "purchase_price": 50000},
+            "state_farm": {"type": "ферма", "name": "Державні Угіддя", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 120, "агроном": 200}, "vacancy_limits": {"робітник": 5, "агроном": 2}, "reserve": 1000000, "purchase_price": 45000},
+            "state_office": {"type": "офіс", "name": "Державний Офіс", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_warehouse", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 180, "менеджер": 250}, "vacancy_limits": {"робітник": 5, "менеджер": 2}, "reserve": 1000000, "purchase_price": 50000},
+            "state_server_1": {"type": "сервер", "name": "Головний Держ-Сервер", "level": 3, "durability": 100, "storage": {}, "connected_to": "state_office", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 200}, "vacancy_limits": {"робітник": 3}, "reserve": 1000000, "purchase_price": 30000},
+            "state_server_2": {"type": "сервер", "name": "Резервний Держ-Сервер", "level": 2, "durability": 100, "storage": {}, "connected_to": "state_office", "hiring_mode": "open", "workers": {}, "salaries": {"робітник": 160}, "vacancy_limits": {"робітник": 2}, "reserve": 1000000, "purchase_price": 30000}
         }
         data["companies"]["STATE_COMPANY"] = {
             "name": "🏛️ Державне Підприємство",
@@ -113,8 +126,7 @@ def get_monopoly_data(guild_id: int):
 
 def calculate_capacity(level: int) -> int:
     cap = 100
-    for _ in range(1, level):
-        cap = int(cap * 1.10)
+    for _ in range(1, level): cap = int(cap * 1.10)
     return cap
 
 def get_repair_cost(current_durability: int) -> int:
@@ -129,9 +141,8 @@ def get_user_company(user_id: str, mono_data: dict):
         return mono_data["companies"][user_id]
     
     for comp in mono_data["companies"].values():
-        for prop in comp["properties"].values():
-            if user_id in prop.get("workers", {}):
-                return comp
+        if any(user_id in prop.get("workers", {}) for prop in comp["properties"].values()):
+            return comp
     return None
 
 def add_to_storage(company_id: str, mono_data: dict, start_pid: str, r_type: str, amount: int) -> int:
@@ -145,56 +156,93 @@ def add_to_storage(company_id: str, mono_data: dict, start_pid: str, r_type: str
         
         if current_pid.startswith("rent_"):
             real_pid = current_pid.replace("rent_", "")
-            rent_data = mono_data["active_rentals"].get(real_pid)
-            if not rent_data: break
-            
-            cap = rent_data["capacity"]
-            current_total = sum(rent_data.get("storage", {}).values())
-            space_left = max(0, cap - current_total)
-            
-            if space_left >= remaining:
-                if "storage" not in rent_data: rent_data["storage"] = {}
-                rent_data["storage"][r_type] = rent_data["storage"].get(r_type, 0) + remaining
-                remaining = 0
-            else:
-                if space_left > 0:
-                    if "storage" not in rent_data: rent_data["storage"] = {}
-                    rent_data["storage"][r_type] = rent_data["storage"].get(r_type, 0) + space_left
-                    remaining -= space_left
-            break 
-            
+            target_data = mono_data["active_rentals"].get(real_pid)
+            if not target_data: break
+            cap = target_data["capacity"]
         else:
-            prop = company["properties"].get(current_pid)
-            if not prop: break
+            target_data = company["properties"].get(current_pid)
+            if not target_data: break
+            cap = max(0, calculate_capacity(target_data["level"]) - get_rented_capacity(mono_data, current_pid))
             
-            cap = calculate_capacity(prop["level"])
-            
-            rented_cap = 0
-            for offer in mono_data["rental_market"].values():
-                if offer["prop_id"] == current_pid: rented_cap += offer["capacity"]
-            for rent in mono_data["active_rentals"].values():
-                if rent["prop_id"] == current_pid: rented_cap += rent["capacity"]
-            
-            cap = max(0, cap - rented_cap)
-            
-            current_total = sum(prop.get("storage", {}).values())
-            space_left = max(0, cap - current_total)
-            
-            if space_left >= remaining:
-                prop["storage"][r_type] = prop["storage"].get(r_type, 0) + remaining
-                remaining = 0
-            else:
-                if space_left > 0:
-                    prop["storage"][r_type] = prop["storage"].get(r_type, 0) + space_left
-                    remaining -= space_left
-                
-                current_pid = prop.get("connected_to")
+        target_data.setdefault("storage", {})
+        space_left = max(0, cap - get_total_items(target_data["storage"]))
+        
+        if space_left >= remaining:
+            target_data["storage"][r_type] = target_data["storage"].get(r_type, 0) + remaining
+            remaining = 0
+        else:
+            if space_left > 0:
+                target_data["storage"][r_type] = target_data["storage"].get(r_type, 0) + space_left
+                remaining -= space_left
+            current_pid = target_data.get("connected_to")
                 
     return remaining
 
-# ==========================================
-# UI: ПЕРЕЙМЕНУВАННЯ, ПРОДАЖ ТА ПОКРАЩЕННЯ
-# ==========================================
+class VacancyLimitModal(discord.ui.Modal):
+    def __init__(self, owner_id: str, prop_id: str, mono_data: dict):
+        super().__init__(title="Налаштування вакансій")
+        self.owner_id = owner_id
+        self.prop_id = prop_id
+        self.mono_data = mono_data
+        self.prop = mono_data["companies"][owner_id]["properties"][prop_id]
+        
+        self.inputs = {}
+        for prof in PROFESSIONS[self.prop["type"]]:
+            current_limit = self.prop.get("vacancy_limits", {}).get(prof, 1)
+            inp = discord.ui.TextInput(label=f"Макс. {prof.capitalize()}", default=str(current_limit), required=True)
+            self.inputs[prof] = inp
+            self.add_item(inp)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        total_slots = 0
+        new_limits = {}
+        for prof, inp in self.inputs.items():
+            try:
+                val = int(inp.value)
+                if val < 0: raise ValueError
+                new_limits[prof] = val
+                total_slots += val
+            except ValueError:
+                return await interaction.response.send_message("Вводьте лише додатні числа!", ephemeral=True)
+                
+        max_total_slots = self.prop["level"] * 3
+        if total_slots > max_total_slots:
+            return await interaction.response.send_message(f"❌ Перевищено загальний ліміт! Для {self.prop['level']} рівня доступно максимум {max_total_slots} місць загалом.", ephemeral=True)
+            
+        self.prop["vacancy_limits"] = new_limits
+        save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
+        await interaction.response.send_message("✅ Ліміти вакансій успішно оновлено!", ephemeral=True)
+
+class ReserveManageModal(discord.ui.Modal, title="Поповнення Бюджету Об'єкта"):
+    amount_input = discord.ui.TextInput(label="Сума (AC)", placeholder="Наприклад: 500", required=True)
+
+    def __init__(self, owner_id: str, prop_id: str, mono_data: dict):
+        super().__init__()
+        self.owner_id, self.prop_id, self.mono_data = owner_id, prop_id, mono_data
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try: amount = int(self.amount_input.value)
+        except ValueError: return await interaction.response.send_message("Некоректна сума.", ephemeral=True)
+        if amount <= 0: return await interaction.response.send_message("Введіть суму більшу за 0.", ephemeral=True)
+            
+        prop = self.mono_data["companies"][self.owner_id]["properties"][self.prop_id]
+        users_data = load_guild_json(interaction.guild.id, DATA_FILE)
+        
+        if users_data.get(self.owner_id, {}).get("balance", 0) < amount:
+            return await interaction.response.send_message("Недостатньо коштів на вашому балансі.", ephemeral=True)
+            
+        max_res = get_max_reserve(prop["level"])
+        current_res = prop.get("reserve", 0)
+        
+        if current_res + amount > max_res:
+            return await interaction.response.send_message(f"Перевищено ліміт резерву! Максимум для цього рівня: {max_res} AC. Ви можете додати ще максимум {max_res - current_res} AC.", ephemeral=True)
+            
+        users_data[self.owner_id]["balance"] -= amount
+        prop["reserve"] = current_res + amount
+        
+        save_guild_json(interaction.guild.id, DATA_FILE, users_data)
+        save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
+        await interaction.response.send_message(f"✅ Бюджет об'єкта поповнено. Поточний резерв: {prop['reserve']} AC.", ephemeral=True)
 
 class TransferCompanyModal(discord.ui.Modal, title="Передача компанії"):
     name_input = discord.ui.TextInput(label="Введіть назву компанії для підтвердження", required=True)
@@ -209,26 +257,20 @@ class TransferCompanyModal(discord.ui.Modal, title="Передача компа�
         target_id = str(self.target_user.id)
         comp = self.mono_data["companies"].get(self.owner_id)
         
-        if not comp:
-            return await interaction.response.send_message("У вас немає компанії.", ephemeral=True)
-        
+        if not comp: return await interaction.response.send_message("У вас немає компанії.", ephemeral=True)
         if self.name_input.value.strip().lower() != comp["name"].strip().lower():
             return await interaction.response.send_message("Назва не збігається. Скасовано.", ephemeral=True)
-
         if target_id in self.mono_data["companies"]:
             return await interaction.response.send_message("У цільового гравця вже є інша компанія.", ephemeral=True)
 
         guild = interaction.guild
 
         for rent in self.mono_data["active_rentals"].values():
-            if rent["owner_id"] == self.owner_id:
-                rent["owner_id"] = target_id
-            if rent["renter_id"] == self.owner_id:
-                rent["renter_id"] = target_id
+            if rent["owner_id"] == self.owner_id: rent["owner_id"] = target_id
+            if rent["renter_id"] == self.owner_id: rent["renter_id"] = target_id
 
         for offer in self.mono_data["rental_market"].values():
-            if offer["owner_id"] == self.owner_id:
-                offer["owner_id"] = target_id
+            if offer["owner_id"] == self.owner_id: offer["owner_id"] = target_id
 
         self.mono_data["companies"][target_id] = self.mono_data["companies"].pop(self.owner_id)
 
@@ -243,15 +285,14 @@ class TransferCompanyModal(discord.ui.Modal, title="Передача компа�
                 await channel.send(f"👑 Увага всім працівникам! Власник компанії змінився. Новий керівник: {self.target_user.mention}.")
 
         users_data = load_guild_json(guild.id, DATA_FILE)
-        for uid, udata in users_data.items():
-            job = udata.get("job", {})
-            if job.get("company_id") == self.owner_id:
+        for udata in users_data.values():
+            if udata.get("job", {}).get("company_id") == self.owner_id:
                 udata["job"]["company_id"] = target_id
+                
         save_guild_json(guild.id, DATA_FILE, users_data)
-
         save_guild_json(guild.id, MONOPOLY_FILE, self.mono_data)
 
-        await interaction.response.send_message(f"Компанію **{comp['name']}** з усім майном, каналами та працівниками успішно передано гравцю {self.target_user.mention}!", ephemeral=False)
+        await interaction.response.send_message(f"Компанію **{comp['name']}** успішно передано гравцю {self.target_user.mention}!", ephemeral=False)
 
 class DeleteCompanyModal(discord.ui.Modal, title="Видалення компанії"):
     name_input = discord.ui.TextInput(label="Введіть назву компанії для підтвердження", required=True)
@@ -324,17 +365,20 @@ class SellPropertyModal(discord.ui.Modal, title="Підтвердження пр
             "price": 40000,
             "durability": 50,
             "salaries": prop.get("salaries", {prof: 100 for prof in PROFESSIONS[prop["type"]]}),
+            "vacancy_limits": prop.get("vacancy_limits", {prof: 1 for prof in PROFESSIONS[prop["type"]]}),
+            "reserve": prop.get("reserve", 0),
             "purchase_price": prop.get("purchase_price", BASE_PRICES.get(prop["type"], 50000))
         }
         self.mono_data["used_market"].append(used_item)
         
         users_data = load_guild_json(interaction.guild.id, DATA_FILE)
-        users_data[self.owner_id]["balance"] = users_data[self.owner_id].get("balance", 0) + 30000
+        refund = 30000 + prop.get("reserve", 0)
+        users_data[self.owner_id]["balance"] = users_data.get(self.owner_id, {}).get("balance", 0) + refund
         
         save_guild_json(interaction.guild.id, DATA_FILE, users_data)
         save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
         
-        await interaction.response.send_message(f"Майно **{prop['name']}** успішно продано на Б/У ринок за 30,000 AC.", ephemeral=True)
+        await interaction.response.send_message(f"Майно **{prop['name']}** успішно продано на Б/У ринок. Повернуто {refund} AC (з урахуванням залишку в бюджеті).", ephemeral=True)
 
 class UpgradePropertyModal(discord.ui.Modal):
     name_input = discord.ui.TextInput(label="Введіть точну назву для підтвердження", required=True)
@@ -351,31 +395,22 @@ class UpgradePropertyModal(discord.ui.Modal):
         if not prop: return
         
         if self.name_input.value.strip().lower() != prop["name"].strip().lower():
-            return await interaction.response.send_message("Помилка: Назва не збігається. Покращення скасовано.", ephemeral=True)
+            return await interaction.response.send_message("Помилка: Назва не збігається.", ephemeral=True)
             
         guild_id = interaction.guild.id
         users_data = load_guild_json(guild_id, DATA_FILE)
-        
-        if users_data[self.owner_id].get("balance", 0) < self.cost:
-            return await interaction.response.send_message(f"Недостатньо коштів. Потрібно {self.cost} AC.", ephemeral=True)
-            
-        users_data[self.owner_id]["balance"] -= self.cost
-        
         config = load_guild_json(guild_id, ECONOMY_CONFIG)
-        config["server_bank"] = config.get("server_bank", 0) + self.cost
-        save_guild_json(guild_id, ECONOMY_CONFIG, config)
+        
+        if not process_transaction(users_data, config, self.owner_id, self.cost):
+            return await interaction.response.send_message(f"Недостатньо коштів. Потрібно {self.cost} AC.", ephemeral=True)
         
         prop["level"] += 1
         
+        save_guild_json(guild_id, ECONOMY_CONFIG, config)
         save_guild_json(guild_id, DATA_FILE, users_data)
         save_guild_json(guild_id, MONOPOLY_FILE, self.mono_data)
         
-        await interaction.response.send_message(f"✅ Майно **{prop['name']}** успішно покращено до {prop['level']} рівня!", ephemeral=True)
-
-
-# ==========================================
-# UI: НАЛАШТУВАННЯ ЗАРПЛАТИ
-# ==========================================
+        await interaction.response.send_message(f"✅ Майно **{prop['name']}** покращено до {prop['level']} рівня! Максимальний ліміт місць та бюджету збільшено.", ephemeral=True)
 
 class SalarySetModal(discord.ui.Modal):
     def __init__(self, owner_id: str, prop_id: str, profession: str, mono_data: dict):
@@ -400,12 +435,10 @@ class SalarySetModal(discord.ui.Modal):
             return await interaction.response.send_message("Введіть коректне додатне число.", ephemeral=True)
 
         prop = self.mono_data["companies"][self.owner_id]["properties"][self.prop_id]
-        if "salaries" not in prop:
-            prop["salaries"] = {prof: 100 for prof in PROFESSIONS[prop["type"]]}
-        
+        prop.setdefault("salaries", {prof: 100 for prof in PROFESSIONS[prop["type"]]})
         prop["salaries"][self.profession] = amount
-        save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
         
+        save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
         await interaction.response.send_message(f"ЗП для {self.profession} встановлено на `{amount} AC`.", ephemeral=True)
 
 class ProfessionSelect(discord.ui.Select):
@@ -418,15 +451,7 @@ class ProfessionSelect(discord.ui.Select):
         profs = PROFESSIONS.get(prop["type"], [])
         salaries = prop.get("salaries", {})
         
-        options = []
-        for p in profs:
-            current_salary = salaries.get(p, 100)
-            options.append(discord.SelectOption(
-                label=p.capitalize(),
-                value=p,
-                description=f"Поточна ЗП: {current_salary} AC"
-            ))
-        
+        options = [discord.SelectOption(label=p.capitalize(), value=p, description=f"Поточна ЗП: {salaries.get(p, 100)} AC") for p in profs]
         super().__init__(placeholder="Оберіть професію...", min_values=1, max_values=1, options=options)
 
     async def callback(self, interaction: discord.Interaction):
@@ -438,10 +463,6 @@ class SalaryManageView(discord.ui.View):
         super().__init__(timeout=120)
         self.add_item(ProfessionSelect(owner_id, prop_id, mono_data))
 
-# ==========================================
-# UI: СКЛАДНІ ОРЕНДИ ТА ЇХ СКАСУВАННЯ
-# ==========================================
-
 class RentOutModal(discord.ui.Modal, title="Здати склад в оренду"):
     def __init__(self, owner_id: str, prop_id: str, mono_data: dict):
         super().__init__()
@@ -449,47 +470,27 @@ class RentOutModal(discord.ui.Modal, title="Здати склад в оренд�
         self.prop_id = prop_id
         self.mono_data = mono_data
         
-        self.cap_input = discord.ui.TextInput(
-            label="Кількість місця для оренди",
-            placeholder="Наприклад: 50",
-            required=True
-        )
-        self.price_input = discord.ui.TextInput(
-            label="Ціна оренди за день (AC)",
-            placeholder="Наприклад: 150",
-            required=True
-        )
+        self.cap_input = discord.ui.TextInput(label="Кількість місця для оренди", placeholder="Наприклад: 50", required=True)
+        self.price_input = discord.ui.TextInput(label="Ціна оренди за день (AC)", placeholder="Наприклад: 150", required=True)
         self.add_item(self.cap_input)
         self.add_item(self.price_input)
         
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            cap = int(self.cap_input.value)
-            price = int(self.price_input.value)
+            cap, price = int(self.cap_input.value), int(self.price_input.value)
             if cap <= 0 or price < 0: raise ValueError
         except ValueError:
             return await interaction.response.send_message("Введіть коректні числа.", ephemeral=True)
             
         prop = self.mono_data["companies"][self.owner_id]["properties"][self.prop_id]
-        max_cap = calculate_capacity(prop["level"])
-        
-        rented_cap = 0
-        for offer in self.mono_data["rental_market"].values():
-            if offer["prop_id"] == self.prop_id: rented_cap += offer["capacity"]
-        for rent in self.mono_data["active_rentals"].values():
-            if rent["prop_id"] == self.prop_id: rented_cap += rent["capacity"]
-            
-        available_cap = max(0, max_cap - rented_cap)
+        available_cap = max(0, calculate_capacity(prop["level"]) - get_rented_capacity(self.mono_data, self.prop_id))
         
         if cap > available_cap:
             return await interaction.response.send_message(f"Перевищено ліміт. Доступно для здачі: {available_cap} місць.", ephemeral=True)
             
-        offer_id = str(uuid.uuid4())[:8]
+        offer_id = gen_id()
         self.mono_data["rental_market"][offer_id] = {
-            "owner_id": self.owner_id,
-            "prop_id": self.prop_id,
-            "capacity": cap,
-            "price": price
+            "owner_id": self.owner_id, "prop_id": self.prop_id, "capacity": cap, "price": price
         }
         
         save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
@@ -498,10 +499,7 @@ class RentOutModal(discord.ui.Modal, title="Здати склад в оренд�
 class MutualRentCancelView(discord.ui.View):
     def __init__(self, rent_id: str, initiator_id: str, target_id: str, mono_data: dict):
         super().__init__(timeout=86400)
-        self.rent_id = rent_id
-        self.initiator_id = initiator_id
-        self.target_id = target_id
-        self.mono_data = mono_data
+        self.rent_id, self.initiator_id, self.target_id, self.mono_data = rent_id, initiator_id, target_id, mono_data
 
     @discord.ui.button(label="Підтвердити скасування", style=discord.ButtonStyle.danger)
     async def confirm_cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -510,14 +508,12 @@ class MutualRentCancelView(discord.ui.View):
             
         if self.rent_id in self.mono_data["active_rentals"]:
             del self.mono_data["active_rentals"][self.rent_id]
-            
-            for c_id, comp in self.mono_data["companies"].items():
+            for comp in self.mono_data["companies"].values():
                 for p in comp["properties"].values():
                     if p.get("connected_to") == f"rent_{self.rent_id}":
                         p["connected_to"] = None
                         
             save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
-            
             for child in self.children: child.disabled = True
             await interaction.response.edit_message(content=f"✅ <@{self.initiator_id}> та <@{self.target_id}> успішно розірвали договір оренди.", view=self)
             self.stop()
@@ -535,63 +531,40 @@ class MutualRentCancelView(discord.ui.View):
 
 class ManageRentalsSelect(discord.ui.Select):
     def __init__(self, owner_id: str, prop_id: str, mono_data: dict):
-        self.owner_id = owner_id
-        self.prop_id = prop_id
-        self.mono_data = mono_data
+        self.owner_id, self.prop_id, self.mono_data = owner_id, prop_id, mono_data
         options = []
         
-        for offer_id, offer in mono_data["rental_market"].items():
+        for oid, offer in mono_data["rental_market"].items():
             if offer["prop_id"] == prop_id and offer["owner_id"] == owner_id:
-                options.append(discord.SelectOption(
-                    label=f"Оффер: {offer['capacity']} місць",
-                    value=f"offer_{offer_id}",
-                    description=f"В очікуванні клієнта. Ціна: {offer['price']} AC"
-                ))
+                options.append(discord.SelectOption(label=f"Оффер: {offer['capacity']} місць", value=f"offer_{oid}", description=f"В очікуванні клієнта. Ціна: {offer['price']} AC"))
                 
-        for rent_id, rent in mono_data["active_rentals"].items():
+        for rid, rent in mono_data["active_rentals"].items():
             if rent["prop_id"] == prop_id and rent["owner_id"] == owner_id:
-                renter_name = "Орендар"
-                if rent["renter_id"] in mono_data["companies"]:
-                    renter_name = mono_data["companies"][rent["renter_id"]]["name"]
-                    
-                options.append(discord.SelectOption(
-                    label=f"Активна оренда: {rent['capacity']} місць",
-                    value=f"active_{rent_id}",
-                    description=f"Орендує: {renter_name}. ЗП: {rent['price']} AC"
-                ))
+                r_name = mono_data["companies"].get(rent["renter_id"], {}).get("name", "Орендар")
+                options.append(discord.SelectOption(label=f"Активна оренда: {rent['capacity']} місць", value=f"active_{rid}", description=f"Орендує: {r_name}. ЗП: {rent['price']} AC"))
                 
-        if not options:
-            options.append(discord.SelectOption(label="Немає активних пропозицій чи угод", value="none"))
-            
+        if not options: options.append(discord.SelectOption(label="Немає активних пропозицій чи угод", value="none"))
         super().__init__(placeholder="Виберіть угоду/оффер для скасування...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         if self.values[0] == "none": return await interaction.response.defer()
         
         action_type, r_id = self.values[0].split("_", 1)
-        
         if action_type == "offer":
             del self.mono_data["rental_market"][r_id]
             save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
-            await interaction.response.send_message("Пропозицію оренди (оффер) скасовано.", ephemeral=True)
+            await interaction.response.send_message("Пропозицію оренди скасовано.", ephemeral=True)
             
         elif action_type == "active":
-            rent = self.mono_data["active_rentals"][r_id]
-            target_id = rent["renter_id"]
-            
+            target_id = self.mono_data["active_rentals"][r_id]["renter_id"]
             view = MutualRentCancelView(r_id, self.owner_id, target_id, self.mono_data)
-            msg = f"🔔 <@{target_id}>, власник складу <@{self.owner_id}> пропонує розірвати договір оренди. Ви згодні?"
-            
-            await interaction.channel.send(content=msg, view=view)
+            await interaction.channel.send(content=f"🔔 <@{target_id}>, власник складу <@{self.owner_id}> пропонує розірвати договір оренди. Ви згодні?", view=view)
             await interaction.response.send_message("Запит на скасування оренди успішно відправлено в чат.", ephemeral=True)
 
 class ManageRentalsView(discord.ui.View):
     def __init__(self, owner_id: str, prop_id: str, mono_data: dict):
         super().__init__(timeout=120)
-        self.owner_id = owner_id
-        self.prop_id = prop_id
-        self.mono_data = mono_data
-        
+        self.owner_id, self.prop_id, self.mono_data = owner_id, prop_id, mono_data
         self.add_item(ManageRentalsSelect(owner_id, prop_id, mono_data))
 
     @discord.ui.button(label="Здати нову частину", style=discord.ButtonStyle.success)
@@ -601,42 +574,38 @@ class ManageRentalsView(discord.ui.View):
 class TransferAcceptView(discord.ui.View):
     def __init__(self, sender_id, target_id, source_id, dest_id, is_source_rented, is_dest_rented, res_type, amount, mono_data):
         super().__init__(timeout=86400)
-        self.sender_id, self.target_id = sender_id, target_id
-        self.source_id, self.dest_id = source_id, dest_id
-        self.is_source_rented, self.is_dest_rented = is_source_rented, is_dest_rented
-        self.res_type, self.amount = res_type, amount
+        self.s_id, self.t_id, self.src_id, self.dst_id = sender_id, target_id, source_id, dest_id
+        self.is_s_rented, self.is_d_rented = is_source_rented, is_dest_rented
+        self.res_type, self.amount, self.mono_data = res_type, amount, mono_data
 
     @discord.ui.button(label="Прийняти ресурси", style=discord.ButtonStyle.success)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != str(self.target_id): return await interaction.response.send_message("Це не для вас.", ephemeral=True)
+        if str(interaction.user.id) != str(self.t_id): return await interaction.response.send_message("Це не для вас.", ephemeral=True)
             
-        mono_data = get_monopoly_data(interaction.guild.id)
-        source_data = mono_data["active_rentals"].get(self.source_id.replace("rent_", "")) if self.is_source_rented else mono_data["companies"].get(self.sender_id, {}).get("properties", {}).get(self.source_id)
-        target_data = mono_data["active_rentals"].get(self.dest_id.replace("rent_", "")) if self.is_dest_rented else mono_data["companies"].get(self.target_id, {}).get("properties", {}).get(self.dest_id)
+        md = get_monopoly_data(interaction.guild.id)
+        s_data = md["active_rentals"].get(self.src_id.replace("rent_", "")) if self.is_s_rented else md["companies"].get(self.s_id, {}).get("properties", {}).get(self.src_id)
+        t_data = md["active_rentals"].get(self.dst_id.replace("rent_", "")) if self.is_d_rented else md["companies"].get(self.t_id, {}).get("properties", {}).get(self.dst_id)
             
-        if not source_data or not target_data: return await interaction.response.send_message("Один зі складів більше не існує.", ephemeral=True)
-        if source_data.get("storage", {}).get(self.res_type, 0) < self.amount: return await interaction.response.send_message("У відправника вже немає цієї кількості.", ephemeral=True)
+        if not s_data or not t_data: return await interaction.response.send_message("Один зі складів більше не існує.", ephemeral=True)
+        if s_data.get("storage", {}).get(self.res_type, 0) < self.amount: return await interaction.response.send_message("У відправника вже немає цієї кількості.", ephemeral=True)
             
-        cap = target_data.get("capacity") if self.is_dest_rented else calculate_capacity(target_data["level"])
-        if not self.is_dest_rented:
-            rented_out = sum(o["capacity"] for o in mono_data["rental_market"].values() if o["prop_id"] == self.dest_id) + sum(r["capacity"] for r in mono_data["active_rentals"].values() if r["prop_id"] == self.dest_id)
-            cap = max(0, cap - rented_out)
+        cap = t_data.get("capacity") if self.is_d_rented else max(0, calculate_capacity(t_data["level"]) - get_rented_capacity(md, self.dst_id))
             
-        if sum(target_data.get("storage", {}).values()) + self.amount > cap:
+        if get_total_items(t_data.get("storage", {})) + self.amount > cap:
             return await interaction.response.send_message("На вашому складі вже немає місця.", ephemeral=True)
             
-        source_data["storage"][self.res_type] -= self.amount
-        if "storage" not in target_data: target_data["storage"] = {}
-        target_data["storage"][self.res_type] = target_data.get("storage", {}).get(self.res_type, 0) + self.amount
+        s_data["storage"][self.res_type] -= self.amount
+        t_data.setdefault("storage", {})
+        t_data["storage"][self.res_type] = t_data["storage"].get(self.res_type, 0) + self.amount
         
-        save_guild_json(interaction.guild.id, MONOPOLY_FILE, mono_data)
+        save_guild_json(interaction.guild.id, MONOPOLY_FILE, md)
         for child in self.children: child.disabled = True
         await interaction.response.edit_message(content="Переказ успішно завершено.", view=self)
         self.stop()
         
     @discord.ui.button(label="Відхилити", style=discord.ButtonStyle.danger)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if str(interaction.user.id) != str(self.target_id): return await interaction.response.send_message("Це не для вас.", ephemeral=True)
+        if str(interaction.user.id) != str(self.t_id): return await interaction.response.send_message("Це не для вас.", ephemeral=True)
         for child in self.children: child.disabled = True
         await interaction.response.edit_message(content="Переказ відхилено.", view=self)
         self.stop()
@@ -649,60 +618,56 @@ class TransferResourceModal(discord.ui.Modal, title="Перенесення ре
 
     def __init__(self, owner_id: str, prop_id: str, is_rented: bool, mono_data: dict):
         super().__init__()
-        self.owner_id, self.prop_id, self.is_rented, self.mono_data = owner_id, prop_id, is_rented, mono_data
+        self.o_id, self.p_id, self.is_r, self.md = owner_id, prop_id, is_rented, mono_data
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            amount = int(self.amount_input.value)
-            if amount <= 0: raise ValueError
+            amt = int(self.amount_input.value)
+            if amt <= 0: raise ValueError
         except: return await interaction.response.send_message("Некоректна кількість.", ephemeral=True)
             
         res_type = self.res_type_input.value.strip().lower()
         if res_type not in ["матеріали", "врожай", "дані"]: return await interaction.response.send_message("Тип має бути: матеріали, врожай або дані.", ephemeral=True)
             
-        source_data = self.mono_data["active_rentals"].get(self.prop_id.replace("rent_", "")) if self.is_rented else self.mono_data["companies"][self.owner_id]["properties"].get(self.prop_id)
-        if not source_data: return
-        source_name = "Орендований склад" if self.is_rented else source_data["name"]
+        src_data = self.md["active_rentals"].get(self.p_id.replace("rent_", "")) if self.is_r else self.md["companies"][self.o_id]["properties"].get(self.p_id)
+        if not src_data: return
+        src_name = "Орендований склад" if self.is_r else src_data["name"]
         
-        if self.confirm_input.value.strip().lower() != source_name.strip().lower():
+        if self.confirm_input.value.strip().lower() != src_name.strip().lower():
             return await interaction.response.send_message("Назва підтвердження не збігається.", ephemeral=True)
-            
-        if source_data.get("storage", {}).get(res_type, 0) < amount: return await interaction.response.send_message("Недостатньо ресурсів на цьому складі.", ephemeral=True)
+        if src_data.get("storage", {}).get(res_type, 0) < amt: 
+            return await interaction.response.send_message("Недостатньо ресурсів на цьому складі.", ephemeral=True)
 
-        target_id = self.target_id_input.value.strip()
-        if target_id == self.prop_id: return await interaction.response.send_message("Не можна переказати на цей самий склад.", ephemeral=True)
+        t_id = self.target_id_input.value.strip()
+        if t_id == self.p_id: return await interaction.response.send_message("Не можна переказати на цей самий склад.", ephemeral=True)
             
-        target_owner, target_name, target_is_rented = None, "", target_id.startswith("rent_")
-        target_data = self.mono_data["active_rentals"].get(target_id.replace("rent_", "")) if target_is_rented else None
+        t_owner, t_name, t_is_r = None, "", t_id.startswith("rent_")
+        t_data = self.md["active_rentals"].get(t_id.replace("rent_", "")) if t_is_r else None
         
-        if target_is_rented and target_data:
-            target_owner, target_name = target_data["renter_id"], "Орендований склад"
-        elif not target_is_rented:
-            for uid, comp in self.mono_data["companies"].items():
-                if target_id in comp["properties"]:
-                    target_owner, target_data, target_name = uid, comp["properties"][target_id], comp["properties"][target_id]["name"]
+        if t_is_r and t_data:
+            t_owner, t_name = t_data["renter_id"], "Орендований склад"
+        elif not t_is_r:
+            for uid, comp in self.md["companies"].items():
+                if t_id in comp["properties"]:
+                    t_owner, t_data, t_name = uid, comp["properties"][t_id], comp["properties"][t_id]["name"]
                     break
                     
-        if not target_data: return await interaction.response.send_message("Склад призначення не знайдено.", ephemeral=True)
+        if not t_data: return await interaction.response.send_message("Склад призначення не знайдено.", ephemeral=True)
 
-        cap = target_data.get("capacity") if target_is_rented else calculate_capacity(target_data["level"])
-        if not target_is_rented:
-            rented_out = sum(o["capacity"] for o in self.mono_data["rental_market"].values() if o["prop_id"] == target_id) + sum(r["capacity"] for r in self.mono_data["active_rentals"].values() if r["prop_id"] == target_id)
-            cap = max(0, cap - rented_out)
-            
-        if sum(target_data.get("storage", {}).values()) + amount > cap: return await interaction.response.send_message("На складі призначення недостатньо місця.", ephemeral=True)
+        cap = t_data.get("capacity") if t_is_r else max(0, calculate_capacity(t_data["level"]) - get_rented_capacity(self.md, t_id))
+        if get_total_items(t_data.get("storage", {})) + amt > cap: 
+            return await interaction.response.send_message("На складі призначення недостатньо місця.", ephemeral=True)
 
-        if target_owner == self.owner_id:
-            source_data["storage"][res_type] -= amount
-            if "storage" not in target_data: target_data["storage"] = {}
-            target_data["storage"][res_type] = target_data.get("storage", {}).get(res_type, 0) + amount
-            save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
+        if t_owner == self.o_id:
+            src_data["storage"][res_type] -= amt
+            t_data.setdefault("storage", {})
+            t_data["storage"][res_type] = t_data["storage"].get(res_type, 0) + amt
+            save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.md)
             return await interaction.response.send_message("Ресурси успішно перенесено.", ephemeral=True)
         
-        view = TransferAcceptView(self.owner_id, target_owner, self.prop_id, target_id, self.is_rented, target_is_rented, res_type, amount, self.mono_data)
-        msg = f"🔔 <@{target_owner}>, гравець <@{self.owner_id}> хоче перенести `{amount}` одиниць `{res_type}` на ваш склад **{target_name}**. Згодні?"
-        await interaction.channel.send(content=msg, view=view)
-        await interaction.response.send_message("Запит на перенесення відправлено власнику.", ephemeral=True)
+        view = TransferAcceptView(self.o_id, t_owner, self.p_id, t_id, self.is_r, t_is_r, res_type, amt, self.md)
+        await interaction.channel.send(content=f"🔔 <@{t_owner}>, гравець <@{self.o_id}> хоче перенести `{amt}` одиниць `{res_type}` на ваш склад **{t_name}**. Згодні?", view=view)
+        await interaction.response.send_message("Запит відправлено власнику.", ephemeral=True)
 
 class RentalMarketSelect(discord.ui.Select):
     def __init__(self, mono_data: dict):
@@ -729,7 +694,9 @@ class RentalMarketSelect(discord.ui.Select):
         
         user_id = str(interaction.user.id)
         guild_id = interaction.guild.id
+        
         users_data = load_guild_json(guild_id, DATA_FILE)
+        config = load_guild_json(guild_id, ECONOMY_CONFIG)
         
         if user_id == offer["owner_id"]:
             return await interaction.response.send_message("Ви не можете орендувати власний склад.", ephemeral=True)
@@ -737,17 +704,12 @@ class RentalMarketSelect(discord.ui.Select):
         if user_id not in self.mono_data["companies"]:
             return await interaction.response.send_message("Спочатку створіть власну компанію.", ephemeral=True)
             
-        if users_data.get(user_id, {}).get("balance", 0) < offer["price"]:
+        if not process_transaction(users_data, None, user_id, offer["price"], offer["owner_id"]):
             return await interaction.response.send_message(f"Недостатньо коштів для першого внеску. Потрібно {offer['price']} AC.", ephemeral=True)
             
-        users_data[user_id]["balance"] -= offer["price"]
-        owner_id = offer["owner_id"]
-        if owner_id in users_data:
-            users_data[owner_id]["balance"] = users_data.get(owner_id, {}).get("balance", 0) + offer["price"]
-            
-        rent_id = str(uuid.uuid4())[:8]
+        rent_id = gen_id()
         self.mono_data["active_rentals"][rent_id] = {
-            "owner_id": owner_id,
+            "owner_id": offer["owner_id"],
             "renter_id": user_id,
             "prop_id": offer["prop_id"],
             "capacity": offer["capacity"],
@@ -766,10 +728,6 @@ class RentalMarketView(discord.ui.View):
         super().__init__(timeout=120)
         self.add_item(RentalMarketSelect(mono_data))
 
-# ==========================================
-# UI: ПАНЕЛІ КЕРУВАННЯ
-# ==========================================
-
 class CompanyCreationModal(discord.ui.Modal, title="Реєстрація Компанії"):
     name_input = discord.ui.TextInput(label="Назва компанії", placeholder="Введіть назву фірми...", min_length=3, max_length=50)
 
@@ -783,22 +741,16 @@ class CompanyCreationModal(discord.ui.Modal, title="Реєстрація Ком�
         user_id = str(interaction.user.id)
         
         users_data = load_guild_json(guild.id, DATA_FILE)
-        if str(user_id) not in users_data or users_data[str(user_id)].get("balance", 0) < 20000:
+        config = load_guild_json(guild.id, ECONOMY_CONFIG)
+        
+        if not process_transaction(users_data, config, user_id, 20000):
             return await interaction.followup.send("Недостатньо коштів. Потрібно 20,000 AC.")
 
         mono_data = get_monopoly_data(guild.id)
         if user_id in mono_data["companies"]:
             return await interaction.followup.send("У вас вже є зареєстрована компанія.")
 
-        users_data[user_id]["balance"] -= 20000
-        
-        config = load_guild_json(guild.id, ECONOMY_CONFIG)
-        config["server_bank"] = config.get("server_bank", 0) + 20000
-        save_guild_json(guild.id, ECONOMY_CONFIG, config)
-
-        category = discord.utils.get(guild.categories, name="Фірми")
-        if not category:
-            category = await guild.create_category("Фірми")
+        category = discord.utils.get(guild.categories, name="Фірми") or await guild.create_category("Фірми")
 
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -814,6 +766,7 @@ class CompanyCreationModal(discord.ui.Modal, title="Реєстрація Ком�
             "properties": {}
         }
 
+        save_guild_json(guild.id, ECONOMY_CONFIG, config)
         save_guild_json(guild.id, DATA_FILE, users_data)
         save_guild_json(guild.id, MONOPOLY_FILE, mono_data)
 
@@ -879,40 +832,48 @@ class PropertyManageView(discord.ui.View):
         prop = mono_data["active_rentals"][prop_id.replace("rent_", "")] if is_rented else mono_data["companies"][owner_id]["properties"][prop_id]
         p_type = "склад" if is_rented else prop["type"]
         
+        btn_rep = discord.ui.Button(label="Відремонтувати", style=discord.ButtonStyle.success, row=1)
+        btn_rep.callback = self.repair_btn
+        self.add_item(btn_rep)
+
+        btn_upg = discord.ui.Button(label="Покращити", style=discord.ButtonStyle.primary, row=1)
+        btn_upg.callback = self.upgrade_btn
+        self.add_item(btn_upg)
+
+        btn_sell = discord.ui.Button(label="Продати на Б/У", style=discord.ButtonStyle.danger, row=1)
+        btn_sell.callback = self.sell_btn
+        self.add_item(btn_sell)
+
+        btn_sal = discord.ui.Button(label="Налаштувати ЗП", style=discord.ButtonStyle.secondary, row=2)
+        btn_sal.callback = self.set_salary_btn
+        self.add_item(btn_sal)
+
+        if not is_rented:
+            btn_lim = discord.ui.Button(label="Ліміти Вакансій", style=discord.ButtonStyle.primary, row=2)
+            btn_lim.callback = self.set_limits_btn
+            self.add_item(btn_lim)
+
+            btn_res = discord.ui.Button(label="Бюджет (Резерв)", style=discord.ButtonStyle.success, row=2)
+            btn_res.callback = self.set_reserve_btn
+            self.add_item(btn_res)
+
+            btn_ren = discord.ui.Button(label="Перейменувати", style=discord.ButtonStyle.secondary, row=3)
+            btn_ren.callback = self.rename_btn
+            self.add_item(btn_ren)
+
+            btn_hire = discord.ui.Button(label="Тип найму", style=discord.ButtonStyle.secondary, row=3)
+            btn_hire.callback = self.toggle_hiring_btn
+            self.add_item(btn_hire)
+
+            if p_type == "склад":
+                btn_rent = discord.ui.Button(label="Управління орендою", style=discord.ButtonStyle.primary, row=4)
+                btn_rent.callback = self.open_rental_manager
+                self.add_item(btn_rent)
+
         if p_type == "склад":
             btn_trans = discord.ui.Button(label="Перенести ресурси", style=discord.ButtonStyle.success, row=4)
             btn_trans.callback = self.open_transfer_modal
             self.add_item(btn_trans)
-
-        if not is_rented:
-            if p_type == "склад":
-                btn = discord.ui.Button(label="Управління орендою", style=discord.ButtonStyle.primary, row=3)
-                btn.callback = self.open_rental_manager
-                self.add_item(btn)
-
-            btn_rep = discord.ui.Button(label="Відремонтувати", style=discord.ButtonStyle.success, row=1)
-            btn_rep.callback = self.repair_btn
-            self.add_item(btn_rep)
-
-            btn_upg = discord.ui.Button(label="Покращити", style=discord.ButtonStyle.primary, row=1)
-            btn_upg.callback = self.upgrade_btn
-            self.add_item(btn_upg)
-
-            btn_sell = discord.ui.Button(label="Продати на Б/У", style=discord.ButtonStyle.danger, row=1)
-            btn_sell.callback = self.sell_btn
-            self.add_item(btn_sell)
-
-            btn_sal = discord.ui.Button(label="Налаштувати ЗП", style=discord.ButtonStyle.primary, row=2)
-            btn_sal.callback = self.set_salary_btn
-            self.add_item(btn_sal)
-
-            btn_ren = discord.ui.Button(label="Перейменувати", style=discord.ButtonStyle.secondary, row=2)
-            btn_ren.callback = self.rename_btn
-            self.add_item(btn_ren)
-
-            btn_hire = discord.ui.Button(label="Тип найму", style=discord.ButtonStyle.secondary, row=2)
-            btn_hire.callback = self.toggle_hiring_btn
-            self.add_item(btn_hire)
 
     async def open_transfer_modal(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TransferResourceModal(self.owner_id, self.prop_id, self.is_rented, self.mono_data))
@@ -920,6 +881,12 @@ class PropertyManageView(discord.ui.View):
     async def open_rental_manager(self, interaction: discord.Interaction):
         view = ManageRentalsView(self.owner_id, self.prop_id, self.mono_data)
         await interaction.response.send_message("Керування пропозиціями та активною орендою для цього складу:", view=view, ephemeral=True)
+
+    async def set_limits_btn(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(VacancyLimitModal(self.owner_id, self.prop_id, self.mono_data))
+
+    async def set_reserve_btn(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(ReserveManageModal(self.owner_id, self.prop_id, self.mono_data))
 
     async def repair_btn(self, interaction: discord.Interaction):
         prop = self.mono_data["companies"][self.owner_id]["properties"][self.prop_id]
@@ -933,19 +900,16 @@ class PropertyManageView(discord.ui.View):
         if resource_type == "none":
             cost_ac = cost * 100
             users_data = load_guild_json(guild_id, DATA_FILE)
-            if users_data[self.owner_id].get("balance", 0) < cost_ac: 
+            config = load_guild_json(guild_id, ECONOMY_CONFIG)
+            
+            if not process_transaction(users_data, config, self.owner_id, cost_ac):
                 return await interaction.response.send_message(f"Недостатньо коштів. Потрібно {cost_ac} AC.", ephemeral=True)
                 
-            users_data[self.owner_id]["balance"] -= cost_ac
             save_guild_json(guild_id, DATA_FILE, users_data)
-            
-            config = load_guild_json(guild_id, ECONOMY_CONFIG)
-            config["server_bank"] = config.get("server_bank", 0) + cost_ac
             save_guild_json(guild_id, ECONOMY_CONFIG, config)
-            
             msg = f"Майно відремонтовано до 100% за `{cost_ac} AC`."
         else:
-            if "storage" not in prop: prop["storage"] = {}
+            prop.setdefault("storage", {})
             current_res = prop["storage"].get(resource_type, 0)
             
             if current_res >= cost:
@@ -956,24 +920,18 @@ class PropertyManageView(discord.ui.View):
                 cost_ac = missing_res * 10
                 
                 users_data = load_guild_json(guild_id, DATA_FILE)
-                balance = users_data.get(self.owner_id, {}).get("balance", 0)
+                config = load_guild_json(guild_id, ECONOMY_CONFIG)
                 
-                if balance < cost_ac:
+                if not process_transaction(users_data, config, self.owner_id, cost_ac):
                     return await interaction.response.send_message(
                         f"Недостатньо ресурсів та коштів!\nПотрібно `{cost}` {resource_type} АБО доплатити `{cost_ac} AC` за нестачу.", 
                         ephemeral=True
                     )
                 
-                if current_res > 0:
-                    prop["storage"][resource_type] = 0
+                if current_res > 0: prop["storage"][resource_type] = 0
                 
-                users_data[self.owner_id]["balance"] -= cost_ac
                 save_guild_json(guild_id, DATA_FILE, users_data)
-                
-                config = load_guild_json(guild_id, ECONOMY_CONFIG)
-                config["server_bank"] = config.get("server_bank", 0) + cost_ac
                 save_guild_json(guild_id, ECONOMY_CONFIG, config)
-                
                 msg = f"Майно відремонтовано! Використано `{current_res}` {resource_type} та доплачено `{cost_ac} AC` з вашого гаманця."
 
         prop["durability"] = 100
@@ -1034,20 +992,26 @@ class PropertiesDropdown(discord.ui.Select):
             embed = discord.Embed(title="Управління: Орендований склад", color=0x2b2d31)
             embed.add_field(name="Вартість оренди", value=f"{rent['price']} AC")
             cap = rent["capacity"]
-            total_items = sum(rent.get("storage", {}).values())
+            total_items = get_total_items(rent.get("storage", {}))
             res_text = "\n".join([f"{k}: {v}" for k, v in rent.get("storage", {}).items() if v > 0])
             embed.add_field(name="Сховище", value=f"{res_text if res_text else 'Порожньо'}\n\nЗайнято: `{total_items}/{cap}`", inline=False)
         else:
             prop = self.mono_data["companies"][self.owner_id]["properties"][prop_id]
             embed = discord.Embed(title=f"Управління: {prop['name']}", color=0x2b2d31)
             embed.add_field(name="Тип", value=prop["type"].capitalize())
-            embed.add_field(name="Рівень", value=f"{prop['level']} (Макс. працівників: {prop['level']})")
+            embed.add_field(name="Рівень", value=f"{prop['level']}")
             embed.add_field(name="Міцність", value=f"{prop['durability']}%")
             
+            max_res = get_max_reserve(prop['level'])
+            embed.add_field(name="Бюджет (Резерв)", value=f"`{prop.get('reserve', 0)} / {max_res} AC`")
+            
+            limits_text = "\n".join([f"{k.capitalize()}: {v}" for k, v in prop.get("vacancy_limits", {pr: 1 for pr in PROFESSIONS[prop["type"]]}).items()])
+            embed.add_field(name="Ліміт місць", value=limits_text)
+            
             cap = calculate_capacity(prop["level"])
-            rented_cap = sum(o["capacity"] for o in self.mono_data["rental_market"].values() if o["prop_id"] == prop_id) + sum(r["capacity"] for r in self.mono_data["active_rentals"].values() if r["prop_id"] == prop_id)
+            rented_cap = get_rented_capacity(self.mono_data, prop_id)
             usable_cap = max(0, cap - rented_cap)
-            total_items = sum(prop.get("storage", {}).values())
+            total_items = get_total_items(prop.get("storage", {}))
             
             res_text = "\n".join([f"{k}: {v}" for k, v in prop.get("storage", {}).items() if v > 0])
             cap_desc = f"{res_text if res_text else 'Порожньо'}\n\nЗайнято: `{total_items}/{usable_cap}`"
@@ -1100,21 +1064,16 @@ class MarketActionModal(discord.ui.Modal):
         user_id = str(interaction.user.id)
         
         users_data = load_guild_json(guild_id, DATA_FILE)
+        config = load_guild_json(guild_id, ECONOMY_CONFIG)
         mono_data = get_monopoly_data(guild_id)
         
         if user_id not in mono_data["companies"]:
             return await interaction.response.send_message("Спочатку створіть компанію (/company_create).", ephemeral=True)
             
-        if users_data[user_id].get("balance", 0) < self.price:
+        if not process_transaction(users_data, config, user_id, self.price):
             return await interaction.response.send_message(f"Недостатньо коштів. Потрібно {self.price} AC.", ephemeral=True)
-            
-        users_data[user_id]["balance"] -= self.price
         
-        config = load_guild_json(guild_id, ECONOMY_CONFIG)
-        config["server_bank"] = config.get("server_bank", 0) + self.price
-        save_guild_json(guild_id, ECONOMY_CONFIG, config)
-        
-        prop_id = str(uuid.uuid4())[:8]
+        prop_id = gen_id()
         mono_data["companies"][user_id]["properties"][prop_id] = {
             "type": self.p_type,
             "name": self.name_input.value,
@@ -1126,12 +1085,15 @@ class MarketActionModal(discord.ui.Modal):
             "is_rented": False,
             "workers": {},
             "salaries": {prof: 100 for prof in PROFESSIONS[self.p_type]},
+            "vacancy_limits": {prof: 1 for prof in PROFESSIONS[self.p_type]},
+            "reserve": 0,
             "purchase_price": self.price
         }
         
         current_price = mono_data["market_prices"][self.p_type]
         mono_data["market_prices"][self.p_type] = int(current_price * 1.10)
         
+        save_guild_json(guild_id, ECONOMY_CONFIG, config)
         save_guild_json(guild_id, DATA_FILE, users_data)
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         
@@ -1178,19 +1140,15 @@ class UsedMarketBuySelect(discord.ui.Select):
         guild_id = interaction.guild.id
         
         users_data = load_guild_json(guild_id, DATA_FILE)
+        config = load_guild_json(guild_id, ECONOMY_CONFIG)
+        
         if user_id not in self.mono_data["companies"]:
             return await interaction.response.send_message("Спочатку створіть компанію.", ephemeral=True)
             
-        if users_data[user_id].get("balance", 0) < item["price"]:
+        if not process_transaction(users_data, config, user_id, item["price"]):
             return await interaction.response.send_message("Недостатньо коштів.", ephemeral=True)
-            
-        users_data[user_id]["balance"] -= item["price"]
         
-        config = load_guild_json(guild_id, ECONOMY_CONFIG)
-        config["server_bank"] = config.get("server_bank", 0) + item["price"]
-        save_guild_json(guild_id, ECONOMY_CONFIG, config)
-        
-        prop_id = str(uuid.uuid4())[:8]
+        prop_id = gen_id()
         self.mono_data["companies"][user_id]["properties"][prop_id] = {
             "type": item["type"],
             "name": item["name"],
@@ -1202,11 +1160,14 @@ class UsedMarketBuySelect(discord.ui.Select):
             "is_rented": False,
             "workers": {},
             "salaries": item.get("salaries", {prof: 100 for prof in PROFESSIONS[item["type"]]}),
+            "vacancy_limits": item.get("vacancy_limits", {prof: 1 for prof in PROFESSIONS[item["type"]]}),
+            "reserve": item.get("reserve", 0),
             "purchase_price": item.get("purchase_price", item["price"])
         }
         
         self.mono_data["used_market"].pop(idx)
         
+        save_guild_json(guild_id, ECONOMY_CONFIG, config)
         save_guild_json(guild_id, DATA_FILE, users_data)
         save_guild_json(guild_id, MONOPOLY_FILE, self.mono_data)
         
@@ -1218,9 +1179,6 @@ class MarketView(discord.ui.View):
         self.add_item(MarketBuySelect(mono_data, cog))
         self.add_item(UsedMarketBuySelect(mono_data))
 
-# ==========================================
-# ОСНОВНИЙ COG КЛАС
-# ==========================================
 
 class MonopolyCog(commands.Cog):
     def __init__(self, bot):
@@ -1228,11 +1186,13 @@ class MonopolyCog(commands.Cog):
         self.daily_monopoly_tick.start()
         self.market_fluctuation.start()
         self.restore_company_channels.start()
+        self.random_events_loop.start()
 
     def cog_unload(self):
         self.daily_monopoly_tick.cancel()
         self.market_fluctuation.cancel()
         self.restore_company_channels.cancel()
+        self.random_events_loop.cancel()
 
     @tasks.loop(hours=1)
     async def restore_company_channels(self):
@@ -1249,48 +1209,85 @@ class MonopolyCog(commands.Cog):
                 updated = False
 
                 for owner_id, comp in mono_data["companies"].items():
-                    if owner_id == "STATE_COMPANY":
-                        continue
-
-                    channel_id = comp.get("channel_id")
-                    channel = guild.get_channel(channel_id) if channel_id else None
-
+                    if owner_id == "STATE_COMPANY": continue
+                    
+                    channel = guild.get_channel(comp.get("channel_id")) if comp.get("channel_id") else None
                     if not channel:
-                        category = discord.utils.get(guild.categories, name="Фірми")
-                        if not category:
-                            category = await guild.create_category("Фірми")
-
+                        category = discord.utils.get(guild.categories, name="Фірми") or await guild.create_category("Фірми")
                         owner_member = guild.get_member(int(owner_id))
                         
-                        overwrites = {
-                            guild.default_role: discord.PermissionOverwrite(read_messages=False)
-                        }
-                        if owner_member:
-                            overwrites[owner_member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                        overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False)}
+                        if owner_member: overwrites[owner_member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
-                        channel_name = comp["name"].lower().replace(" ", "-")
-                        new_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
-                        
+                        new_channel = await category.create_text_channel(name=comp["name"].lower().replace(" ", "-"), overwrites=overwrites)
                         comp["channel_id"] = new_channel.id
                         updated = True
 
-                        workers = set()
-                        for prop in comp["properties"].values():
-                            for worker_id in prop.get("workers", {}).keys():
-                                workers.add(worker_id)
-                        
-                        for worker_id in workers:
-                            worker_member = guild.get_member(int(worker_id))
-                            if worker_member:
-                                await new_channel.set_permissions(worker_member, read_messages=True, send_messages=True)
+                        workers = {wid for p in comp["properties"].values() for wid in p.get("workers", {}).keys()}
+                        for wid in workers:
+                            w_member = guild.get_member(int(wid))
+                            if w_member: await new_channel.set_permissions(w_member, read_messages=True, send_messages=True)
+                                
+                        await new_channel.send("🔄 Цей канал було автоматично відновлено системою. Всі доступи збережено.")
 
-                        await new_channel.send("🔄 Цей канал було автоматично відновлено системою. Всі доступи працівників збережено.")
+                if updated: save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
+            except Exception as e: print(f"Restore Channels Error: {e}")
+
+    @tasks.loop(hours=1)
+    async def random_events_loop(self):
+        """Щогодини перевіряє 10% шанс на створення випадкової події на об'єктах"""
+        await self.bot.wait_until_ready()
+        if not os.path.exists("server_data"): return
+        current_time = int(time.time())
+        
+        for gid in os.listdir("server_data"):
+            try:
+                guild_id = int(gid)
+                guild = self.bot.get_guild(guild_id)
+                if not guild: continue
+                
+                mono_data = get_monopoly_data(guild_id)
+                updated = False
+                
+                for owner_id, comp in mono_data["companies"].items():
+                    if owner_id == "STATE_COMPANY": continue
+                    
+                    channel = guild.get_channel(comp.get("channel_id"))
+                    if not channel: continue
+
+                    for pid, prop in comp["properties"].items():
+                        last_event = prop.get("last_event_time", 0)
+                        if current_time - last_event < 43200: continue
+                        
+                        if random.random() < 0.10:
+                            event_type = random.choice(["good_overtime", "good_inspiration", "bad_breakdown", "bad_blackout"])
+                            prop["last_event_time"] = current_time
+                            prop.setdefault("buffs", {})
+                            updated = True
+                            
+                            if event_type == "good_overtime":
+                                prop["buffs"]["extra_yield"] = prop["buffs"].get("extra_yield", 0) + 2
+                                prop["buffs"]["manager_expires"] = current_time + 14400 # 4 години
+                                await channel.send(f"🎉 **ПОДІЯ: Загальний Ентузіазм!** На об'єкті **{prop['name']}** працівники спіймали кураж. +2 до видобутку на наступні 4 години!")
+                                
+                            elif event_type == "good_inspiration":
+                                res_type = PASSIVE_INCOME.get(prop["type"], {}).get("item", "materials")
+                                if res_type != "none":
+                                    add_to_storage(owner_id, mono_data, pid, res_type, 50)
+                                    await channel.send(f"📦 **ПОДІЯ: Несподівана знахідка!** На склади об'єкта **{prop['name']}** знайдено невраховані ресурси (+50 {res_type})!")
+                                    
+                            elif event_type == "bad_breakdown":
+                                prop["durability"] = max(0, prop["durability"] - 20)
+                                await channel.send(f"⚠️ **ПОДІЯ: Аварія обладнання!** На об'єкті **{prop['name']}** щось вибухнуло. Міцність впала на 20%!")
+                                
+                            elif event_type == "bad_blackout":
+                                prop["buffs"]["disabled_until"] = current_time + 7200 # 2 години простою
+                                await channel.send(f"⚡ **ПОДІЯ: Відключення світла!** На об'єкті **{prop['name']}** зникла електрика. Робота зупинена на 2 години!")
 
                 if updated:
                     save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
-
             except Exception as e:
-                pass
+                print(f"Random Events Error: {e}")
 
     @tasks.loop(time=dt_time(hour=0, minute=0, tzinfo=timezone.utc))
     async def daily_monopoly_tick(self):
@@ -1306,71 +1303,56 @@ class MonopolyCog(commands.Cog):
                 data = get_monopoly_data(guild_id)
                 users_data = load_guild_json(guild_id, DATA_FILE)
                 
-                if current_time - data.get("last_daily_tick", 0) < 86400:
-                    continue
-                    
+                if current_time - data.get("last_daily_tick", 0) < 86400: continue
                 data["last_daily_tick"] = current_time
                 updated = True
                 
                 for rent_id, rent_data in list(data["active_rentals"].items()):
-                    renter_id = rent_data["renter_id"]
-                    owner_id = rent_data["owner_id"]
-                    price = rent_data["price"]
-                    prop_id = rent_data["prop_id"]
+                    r_id, o_id, price, p_id = rent_data["renter_id"], rent_data["owner_id"], rent_data["price"], rent_data["prop_id"]
                     
-                    if rent_data.get("eviction_deadline", 0) > 0:
-                        if current_time >= rent_data["eviction_deadline"]:
-                            owner_prop = data["companies"][owner_id]["properties"][prop_id]
-                            for r_type, r_amount in rent_data.get("storage", {}).items():
-                                owner_prop["storage"][r_type] = owner_prop.get("storage", {}).get(r_type, 0) + r_amount
-                            
-                            del data["active_rentals"][rent_id]
-                            if renter_id in data["companies"]:
-                                for p in data["companies"][renter_id]["properties"].values():
-                                    if p.get("connected_to") == f"rent_{rent_id}":
-                                        p["connected_to"] = None
-                        continue
-                    
-                    renter_balance = users_data.get(renter_id, {}).get("balance", 0)
-                    if renter_balance >= price:
-                        users_data[renter_id]["balance"] -= price
-                        if owner_id in users_data:
-                            users_data[owner_id]["balance"] = users_data.get(owner_id, {}).get("balance", 0) + price
-                    else:
-                        owner_prop = data["companies"][owner_id]["properties"][prop_id]
+                    if rent_data.get("eviction_deadline", 0) > 0 and current_time >= rent_data["eviction_deadline"]:
+                        owner_prop = data["companies"][o_id]["properties"][p_id]
+                        owner_prop.setdefault("storage", {})
                         for r_type, r_amount in rent_data.get("storage", {}).items():
-                            owner_prop["storage"][r_type] = owner_prop.get("storage", {}).get(r_type, 0) + r_amount
+                            owner_prop["storage"][r_type] = owner_prop["storage"].get(r_type, 0) + r_amount
                             
                         del data["active_rentals"][rent_id]
-                        if renter_id in data["companies"]:
-                            for p in data["companies"][renter_id]["properties"].values():
-                                if p.get("connected_to") == f"rent_{rent_id}":
-                                    p["connected_to"] = None
+                        if r_id in data["companies"]:
+                            for p in data["companies"][r_id]["properties"].values():
+                                if p.get("connected_to") == f"rent_{rent_id}": p["connected_to"] = None
+                        continue
+                    
+                    if users_data.get(r_id, {}).get("balance", 0) >= price:
+                        users_data[r_id]["balance"] -= price
+                        if o_id in users_data: users_data[o_id]["balance"] = users_data.get(o_id, {}).get("balance", 0) + price
+                    else:
+                        owner_prop = data["companies"][o_id]["properties"][p_id]
+                        owner_prop.setdefault("storage", {})
+                        for r_type, r_amount in rent_data.get("storage", {}).items():
+                            owner_prop["storage"][r_type] = owner_prop["storage"].get(r_type, 0) + r_amount
+                            
+                        del data["active_rentals"][rent_id]
+                        if r_id in data["companies"]:
+                            for p in data["companies"][r_id]["properties"].values():
+                                if p.get("connected_to") == f"rent_{rent_id}": p["connected_to"] = None
                 
                 for uid, company in data["companies"].items():
                     for pid, prop in company["properties"].items():
                         if prop["durability"] > 0:
-                            buffs = prop.get("buffs", {})
-                            if buffs.get("security_expires", 0) > current_time:
-                                pass 
-                            else:
+                            if prop.get("buffs", {}).get("security_expires", 0) <= current_time:
                                 prop["durability"] = max(0, prop["durability"] - 10)
-                                if prop["durability"] == 0:
-                                    prop["level"] = 1
+                                if prop["durability"] == 0: prop["level"] = 1
                             
                         if prop["durability"] > 0:
                             income_info = PASSIVE_INCOME.get(prop["type"])
                             if income_info and income_info["amount"] > 0:
-                                r_type = income_info["item"]
-                                amount = income_info["amount"]
-                                
-                                add_to_storage(uid, data, pid, r_type, amount)
+                                add_to_storage(uid, data, pid, income_info["item"], income_info["amount"])
 
                 if updated:
                     save_guild_json(guild_id, MONOPOLY_FILE, data)
                     save_guild_json(guild_id, DATA_FILE, users_data)
             except Exception as e:
-                print(f"Monopoly Daily Error: {e}")
+                print(f"Monopoly Daily Error on guild {gid}: {e}")
 
     @tasks.loop(hours=6)
     async def market_fluctuation(self):
@@ -1380,27 +1362,20 @@ class MonopolyCog(commands.Cog):
                 guild_id = int(gid)
                 data = get_monopoly_data(guild_id)
                 
-                for p_type in data["market_prices"]:
+                for p_type, current in data["market_prices"].items():
                     trend = random.uniform(-0.05, 0.05)
                     base = BASE_PRICES[p_type]
-                    current = data["market_prices"][p_type]
-                    
                     if current > base * 1.5: trend -= 0.02
                     elif current < base * 0.5: trend += 0.02
-                    
                     data["market_prices"][p_type] = int(current * (1 + trend))
                     
                 save_guild_json(guild_id, MONOPOLY_FILE, data)
-            except Exception as e:
-                pass
+            except Exception as e: print(f"Market Fluctuation Error: {e}")
 
     @daily_monopoly_tick.before_loop
     async def before_daily(self):
         await self.bot.wait_until_ready()
 
-    # --- КОМАНДИ ---
-
-  
     @app_commands.command(name="company_create", description="Створити власну компанію (20,000 AC)")
     @app_commands.guild_only()
     async def company_create(self, interaction: discord.Interaction):
@@ -1481,7 +1456,6 @@ class MonopolyCog(commands.Cog):
         embed = discord.Embed(title="Ринок оренди складів", color=0xf1c40f)
         await interaction.response.send_message(embed=embed, view=RentalMarketView(mono_data), ephemeral=True)
 
-  
     @app_commands.command(name="transfer_property", description="Передати своє майно іншій фірмі")
     @app_commands.describe(target_user="Власник фірми, якій ви передаєте майно", prop_id="ID вашого майна (можна знайти в меню управління)")
     @app_commands.guild_only()
@@ -1530,7 +1504,6 @@ class MonopolyCog(commands.Cog):
         target_company_name = mono_data["companies"][target_id]["name"]
         await interaction.response.send_message(f"Ви успішно безкоштовно передали майно **{prop['name']}** компанії **{target_company_name}** ({target_user.mention}).", ephemeral=False)
 
-   
     @app_commands.command(name="company_delete", description="Видалити власну компанію НАЗАВЖДИ")
     @app_commands.guild_only()
     async def company_delete(self, interaction: discord.Interaction):
@@ -1543,7 +1516,6 @@ class MonopolyCog(commands.Cog):
             
         await interaction.response.send_modal(DeleteCompanyModal(user_id, mono_data))
 
-   
     @app_commands.command(name="warehouse", description="Переглянути вміст складів")
     @app_commands.guild_only()
     async def warehouse(self, interaction: discord.Interaction):
@@ -1562,18 +1534,12 @@ class MonopolyCog(commands.Cog):
             warehouses = {pid: p for pid, p in company["properties"].items() if p["type"] == "склад"}
             for pid, w in warehouses.items():
                 cap = calculate_capacity(w["level"])
-                
-                rented_cap = 0
-                for offer in mono_data.get("rental_market", {}).values():
-                    if offer["prop_id"] == pid: rented_cap += offer["capacity"]
-                for rent in mono_data.get("active_rentals", {}).values():
-                    if rent["prop_id"] == pid: rented_cap += rent["capacity"]
-                    
+                rented_cap = get_rented_capacity(mono_data, pid)
                 usable_cap = max(0, cap - rented_cap)
                 
-                mats = w["storage"].get("materials", 0)
-                crops = w["storage"].get("crops", 0)
-                data_val = w["storage"].get("data", 0)
+                mats = w.get("storage", {}).get("materials", 0)
+                crops = w.get("storage", {}).get("crops", 0)
+                data_val = w.get("storage", {}).get("data", 0)
                 total_items = mats + crops + data_val
                 
                 desc = (
@@ -1638,14 +1604,10 @@ class MonopolyCog(commands.Cog):
         self._process_daily_tick()
         await interaction.followup.send("Щоденний цикл (знос + видобуток + оплата оренди) виконано примусово!")
 
-
     @app_commands.command(name="admin_remove_used", description="[АДМІН] Видалити майно з Б/У ринку")
     @app_commands.default_permissions(administrator=True)
     @app_commands.guild_only()
     async def admin_remove_used(self, interaction: discord.Interaction, index: int):
-        """
-        Індекс лоту можна подивитись у меню /estate_market (перший лот це 0, другий 1 і т.д.)
-        """
         guild_id = interaction.guild.id
         mono_data = get_monopoly_data(guild_id)
         
@@ -1666,9 +1628,6 @@ class MonopolyCog(commands.Cog):
     ])
     @app_commands.guild_only()
     async def admin_storage(self, interaction: discord.Interaction, owner: discord.User, prop_id: str, res_type: app_commands.Choice[str], amount: int):
-        """
-        amount може бути від'ємним, щоб забрати ресурси (наприклад -50)
-        """
         guild_id = interaction.guild.id
         mono_data = get_monopoly_data(guild_id)
         owner_id = str(owner.id)
@@ -1680,9 +1639,7 @@ class MonopolyCog(commands.Cog):
         if not prop:
             return await interaction.response.send_message("Майно з таким ID не знайдено у цього гравця.", ephemeral=True)
             
-        if "storage" not in prop:
-            prop["storage"] = {}
-            
+        prop.setdefault("storage", {})
         current = prop["storage"].get(res_type.value, 0)
         new_amount = max(0, current + amount)
         prop["storage"][res_type.value] = new_amount
@@ -1690,15 +1647,10 @@ class MonopolyCog(commands.Cog):
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         await interaction.response.send_message(f"Ресурси ({res_type.name}) на об'єкті **{prop['name']}** оновлено.\nБуло: `{current}`\nСтало: `{new_amount}`", ephemeral=True)
 
-
     @app_commands.command(name="admin_rename", description="[АДМІН] Примусово перейменувати компанію або майно")
     @app_commands.default_permissions(administrator=True)
     @app_commands.guild_only()
     async def admin_rename(self, interaction: discord.Interaction, owner: discord.User, new_name: str, prop_id: str = None):
-        """
-        Якщо prop_id не вказано — перейменовується вся компанія.
-        Якщо вказано ID майна — перейменовується лише це майно.
-        """
         guild_id = interaction.guild.id
         mono_data = get_monopoly_data(guild_id)
         owner_id = str(owner.id)
@@ -1720,7 +1672,6 @@ class MonopolyCog(commands.Cog):
             comp["name"] = new_name
             save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
             await interaction.response.send_message(f"Компанію гравця {owner.mention} перейменовано з **{old_name}** на **{new_name}**.", ephemeral=True)
-
 
     @app_commands.command(name="admin_delete_company", description="[АДМІН] Примусово видалити чужу компанію")
     @app_commands.default_permissions(administrator=True)
@@ -1794,7 +1745,6 @@ class MonopolyCog(commands.Cog):
         
         save_guild_json(guild_id, MONOPOLY_FILE, mono_data)
         await interaction.response.send_message(f"Майно **{prop['name']}** примусово передано компанії гравця {target_owner.mention}.", ephemeral=True)
-
 
 async def setup(bot):
     await bot.add_cog(MonopolyCog(bot))
