@@ -188,30 +188,41 @@ class VacancyLimitModal(discord.ui.Modal):
         
         self.inputs = {}
         for prof in PROFESSIONS[self.prop["type"]]:
-            current_limit = self.prop.get("vacancy_limits", {}).get(prof, 1)
-            inp = discord.ui.TextInput(label=f"Макс. {prof.capitalize()}", default=str(current_limit), required=True)
+            current_limit = self.prop.get("vacancy_limits", {}).get(prof, 0)
+            inp = discord.ui.TextInput(
+                label=f"Місць для: {prof.capitalize()}", 
+                default=str(current_limit), 
+                placeholder=f"Макс. загалом: {self.prop['level']}",
+                required=True
+            )
             self.inputs[prof] = inp
             self.add_item(inp)
 
     async def on_submit(self, interaction: discord.Interaction):
-        total_slots = 0
+        total_slots_requested = 0
         new_limits = {}
+        
         for prof, inp in self.inputs.items():
             try:
                 val = int(inp.value)
                 if val < 0: raise ValueError
                 new_limits[prof] = val
-                total_slots += val
+                total_slots_requested += val
             except ValueError:
-                return await interaction.response.send_message("Вводьте лише додатні числа!", ephemeral=True)
+                return await interaction.response.send_message("❌ Помилка: Вводьте лише цілі додатні числа!", ephemeral=True)
                 
-        max_total_slots = self.prop["level"] * 3
-        if total_slots > max_total_slots:
-            return await interaction.response.send_message(f"❌ Перевищено загальний ліміт! Для {self.prop['level']} рівня доступно максимум {max_total_slots} місць загалом.", ephemeral=True)
+        max_allowed = self.prop["level"]
+        if total_slots_requested > max_allowed:
+            return await interaction.response.send_message(
+                f"❌ Неможливо встановити таку кількість місць!\n"
+                f"Загальна сума посад ({total_slots_requested}) перевищує рівень будівлі ({max_allowed}).\n"
+                f"Покращіть будівлю, щоб найняти більше людей.", 
+                ephemeral=True
+            )
             
         self.prop["vacancy_limits"] = new_limits
         save_guild_json(interaction.guild.id, MONOPOLY_FILE, self.mono_data)
-        await interaction.response.send_message("✅ Ліміти вакансій успішно оновлено!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Штатний розклад оновлено! Зайнято {total_slots_requested}/{max_allowed} доступних місць.", ephemeral=True)
 
 class ReserveManageModal(discord.ui.Modal, title="Поповнення Бюджету Об'єкта"):
     amount_input = discord.ui.TextInput(label="Сума (AC)", placeholder="Наприклад: 500", required=True)
